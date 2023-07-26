@@ -12,9 +12,6 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include <opencv2/core/ocl.hpp>
-
-
 using namespace cv;
 
 
@@ -22,35 +19,23 @@ class App
 {
 public:
     App(const CommandLineParser& cmd);
-    ~App();
-
     void initVideoSource();
-
     void initSYCL();
-
     void process_frame(cv::Mat& frame);
-
-    /// to check result with CPU-only reference code
-    Mat process_frame_reference(const cv::Mat& frame);
-
     int run();
-
     bool isRunning() { return m_running; }
     bool doProcess() { return m_process; }
-
     void setRunning(bool running)      { m_running = running; }
     void setDoProcess(bool process)    { m_process = process; }
-
 protected:
     void handleKey(char key);
-
 private:
     bool                        m_running;
     bool                        m_process;
     bool                        m_show_ui;
 
-    int64                       m_t0;
-    int64                       m_t1;
+    int64_t                     m_t0;
+    int64_t                     m_t1;
     float                       m_time;
     float                       m_frequency;
 
@@ -73,17 +58,10 @@ App::App(const CommandLineParser& cmd)
 } // ctor
 
 
-App::~App()
-{
-    // nothing
-}
-
-
 void App::initSYCL()
 {
     using namespace cl::sycl;
 
-    // Configuration details: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
     sycl_queue = cl::sycl::queue(cl::sycl::default_selector_v);
 
     auto device = sycl_queue.get_device();
@@ -107,6 +85,8 @@ void App::initVideoSource()
         m_cap.open(m_camera_id);
         if (!m_cap.isOpened())
             throw std::runtime_error(std::string("can't open camera: ") + std::to_string(m_camera_id));
+        m_cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+        m_cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
     }
     else
         throw std::runtime_error(std::string("specify video source"));
@@ -124,8 +104,6 @@ void App::process_frame(cv::Mat& frame)
 
         buffer<uint8_t, 2> frame_buffer(frame.data, range<2>(frame.rows, frame.cols));
 
-        // done automatically: frame_buffer.set_write_back(true);
-
         sycl_queue.submit([&](handler& cgh) {
           auto pixels = frame_buffer.get_access<access::mode::read_write>(cgh);
 
@@ -138,8 +116,6 @@ void App::process_frame(cv::Mat& frame)
         sycl_queue.wait_and_throw();
     }
 
-    // No way to extract cl_mem from cl::sycl::buffer (ref: 3.6.11 "Interfacing with OpenCL" of SYCL 1.2.1)
-    // We just reusing OpenCL context/device/queue from SYCL here (see initSYCL() bind part) and call UMat processing
     {
         UMat blurResult;
         {
@@ -152,18 +128,8 @@ void App::process_frame(cv::Mat& frame)
     }
 }
 
-Mat App::process_frame_reference(const cv::Mat& frame)
-{
-    Mat result;
-    cv::bitwise_not(frame, result);
-    Mat blurResult;
-    cv::blur(result, blurResult, Size(3, 3));  // avoid inplace
-    blurResult.copyTo(result);
-    return result;
-}
 
-int App::run()
-{
+int App::run() {
     std::cout << "Initializing..." << std::endl;
 
     initSYCL();
@@ -183,8 +149,7 @@ int App::run()
     cv::TickMeter timer;
 
     // Iterate over all frames
-    while (isRunning() && m_cap.read(m_frame))
-    {
+    while (isRunning() && m_cap.read(m_frame)) {
         timer.reset();
         timer.start();
 
@@ -192,33 +157,27 @@ int App::run()
         cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
         if (m_process)
-        {
             process_frame(m_frameGray);
-        }
 
         timer.stop();
 
         Mat img_to_show = m_frameGray;
 
         std::ostringstream msg, msg2;
-        double currentFPS = 1000 / timer.getTimeMilli();
+        int currentFPS = 1000 / timer.getTimeMilli();
         msg << devName;
-        msg2 << "FPS " << cv::format("%.2f", currentFPS) << " (" << m_frame.size
+        msg2 << "FPS " << currentFPS << " (" << m_frame.size
             << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
             << " (process: " << (m_process ? "True" : "False") << ")";
 
-        //std::cout << msg2.str() << std::endl;
-        cv::putText(img_to_show, msg.str(), Point(5, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-        cv::putText(img_to_show, msg2.str(), Point(5, 40), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+        cv::putText(img_to_show, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+        cv::putText(img_to_show, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
 
-        if (m_show_ui)
-        {
-            try
-            {
+        if (m_show_ui) {
+            try {
                 imshow("Optic Flow", img_to_show);
                 int key = waitKey(1);
-                switch (key)
-                {
+                switch (key) {
                 case 27:  // ESC
                     m_running = false;
                     break;
@@ -232,8 +191,7 @@ int App::run()
                     break;
                 }
             }
-            catch (const std::exception& e)
-            {
+            catch (const std::exception& e) {
                 std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
                 if (processedFrames > 0)
                     throw;

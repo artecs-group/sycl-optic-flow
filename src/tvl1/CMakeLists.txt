@@ -5,7 +5,7 @@ set(CXX_STANDARD_REQUIRED 17)
 
 set(This tvl1)
 
-set(Source 
+set(Source
     main.cpp
     # tvl1.cpp
     # zoom.c

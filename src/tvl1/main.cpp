@@ -91,30 +91,6 @@ void App::initSYCL()
     std::cout << "SYCL device: " << device.get_info<info::device::name>()
         << " @ " << device.get_info<info::device::driver_version>()
         << " (platform: " << platform.get_info<info::platform::name>() << ")" << std::endl;
-
-    // if (device.is_cpu())
-    // {
-    //     std::cerr << "SYCL can't select OpenCL device. Host is used for computations, interoperability is not available" << std::endl;
-    // }
-    // else
-    // {
-    //     // bind OpenCL context/device/queue from SYCL to OpenCV
-    //     try
-    //     {
-    //         auto ctx = cv::ocl::OpenCLExecutionContext::create(
-    //                 platform.get_info<info::platform::name>(),
-    //                 platform.get_backend(),
-    //                 sycl_queue.get_context(),
-    //                 device.get_backend()
-    //             );
-    //         ctx.bind();
-    //     }
-    //     catch (const cv::Exception& e)
-    //     {
-    //         std::cerr << "OpenCV: Can't bind SYCL OpenCL context/device/queue: " << e.what() << std::endl;
-    //     }
-    //     std::cout << "OpenCV uses OpenCL: " << (cv::ocl::useOpenCL() ? "True" : "False") << std::endl;
-    // }
 } // initSYCL()
 
 
@@ -209,18 +185,11 @@ int App::run()
     // Iterate over all frames
     while (isRunning() && m_cap.read(m_frame))
     {
-        Mat m_frameGray;
-        cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
-
-        bool checkWithReference = (processedFrames == 0);
-        Mat reference_result;
-        if (checkWithReference)
-        {
-            reference_result = process_frame_reference(m_frameGray);
-        }
-
         timer.reset();
         timer.start();
+
+        Mat m_frameGray;
+        cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
         if (m_process)
         {
@@ -228,17 +197,6 @@ int App::run()
         }
 
         timer.stop();
-
-        if (checkWithReference)
-        {
-            double diffInf = cv::norm(reference_result, m_frameGray, NORM_INF);
-            if (diffInf > 0)
-            {
-                std::cerr << "Result is not accurate. diffInf=" << diffInf << std::endl;
-                imwrite("reference.png", reference_result);
-                imwrite("actual.png", m_frameGray);
-            }
-        }
 
         Mat img_to_show = m_frameGray;
 
@@ -257,7 +215,7 @@ int App::run()
         {
             try
             {
-                imshow("sycl_interop", img_to_show);
+                imshow("Optic Flow", img_to_show);
                 int key = waitKey(1);
                 switch (key)
                 {
@@ -285,11 +243,8 @@ int App::run()
 
         processedFrames++;
 
-        if (!m_show_ui)
-        {
-            if (processedFrames > 100)
-                m_running = false;
-        }
+        if (!m_show_ui && (processedFrames > 100)) 
+            m_running = false;
     }
 
     return 0;

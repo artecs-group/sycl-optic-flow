@@ -1,4 +1,6 @@
-# sycl-optic-flow
+# Optical flow algorithms for SYCL
+<img alt="license" src="https://img.shields.io/github/license/mashape/apistatus.svg"/>
+
 Optical flow algorithms implemented in SYCL
 
 # Table of contents
@@ -57,6 +59,14 @@ cd build
 cmake -G Ninja -DCMAKE_CXX_COMPILER=icpx ..
 cmake --build .
 ONEAPI_DEVICE_SELECTOR=opencl:cpu ./tvl1 --camera=0
+```
+
+In the case you want to run in a NVIDIA GPU, you must configure the project for it:
+
+```bash
+cmake -G Ninja -DCMAKE_CXX_COMPILER=icpx -DDEVICE=ngpu ..
+cmake --build .
+ONEAPI_DEVICE_SELECTOR=cuda:gpu ./tvl1 --camera=0
 ```
 
 ## Acknowledgement

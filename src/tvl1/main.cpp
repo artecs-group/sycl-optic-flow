@@ -5,12 +5,15 @@
  * - SYCL runtime parameters: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
  */
 #include <string>
+#include <cmath>
 #include <CL/sycl.hpp>
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
+
+#include "tvl1.cpp"
 
 using namespace cv;
 
@@ -27,6 +30,7 @@ public:
     bool doProcess() { return m_process; }
     void setRunning(bool running)      { m_running = running; }
     void setDoProcess(bool process)    { m_process = process; }
+    void flowToColor(const cv::Mat& flowData, cv::Mat& outFrame); 
 protected:
     void handleKey(char key);
 private:
@@ -129,6 +133,24 @@ void App::process_frame(cv::Mat& frame)
 }
 
 
+void App::flowToColor(const cv::Mat& flowData, cv::Mat& outFrame) {
+    cv::Mat flow_magnitude, flow_angle;
+    cv::cartToPolar(flowData.col(0), flowData.col(1), flow_magnitude, flow_angle, true);
+
+    cv::Mat hsv(flowData.rows, flowData.cols, CV_8UC3, cv::Scalar(0, 255, 255));
+
+    hsv.at<cv::Vec3b>(cv::Point(0, 0))[0] = 0;
+    for (int y = 0; y < flowData.rows; ++y) {
+        for (int x = 0; x < flowData.cols; ++x) {
+            hsv.at<cv::Vec3b>(y, x)[0] = flow_angle.at<float>(y, x);
+            hsv.at<cv::Vec3b>(y, x)[2] = std::min(static_cast<int>(flow_magnitude.at<float>(y, x) * 10), 255);
+        }
+    }
+
+    cv::cvtColor(hsv, outFrame, cv::COLOR_HSV2BGR);
+}
+
+
 int App::run() {
     std::cout << "Initializing..." << std::endl;
 
@@ -144,24 +166,63 @@ int App::run() {
 
     std::string devName = sycl_queue.get_device().get_info<sycl::info::device::name>();
 
+    const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    constexpr float zfactor{0.5};
+    constexpr float tau{0.25};
+    constexpr float lambda{0.15};
+    constexpr float theta{0.3};
+    constexpr int nwarps{5};
+    constexpr float epsilon{0.01};
+
+    //Set the number of scales according to the size of the
+    //images.  The value N is computed to assure that the smaller
+    //images of the pyramid don't have a size smaller than 16x16
+    float nscales = 100; 
+    const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
+    if (N < nscales) nscales = N;
+
+    // buffers required for the image proccesing
+    uint8_t* I0 = new uint8_t[width * height];
+    uint8_t* I1 = new uint8_t[width * height];
+    float* u = new float[width * height * 2];
+    float* v = u + width*height;
+
     int processedFrames = 0;
 
+    cv::Mat auxFrame;
     cv::TickMeter timer;
 
+    // get first frame
+    m_cap.read(m_frame);
+    
     // Iterate over all frames
-    while (isRunning() && m_cap.read(m_frame)) {
+    while (isRunning()) {
         timer.reset();
         timer.start();
 
-        Mat m_frameGray;
-        cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
+        m_cap.read(auxFrame);
 
-        if (m_process)
-            process_frame(m_frameGray);
+        cv::Mat m_frameGray, m_frameGray2;
+        cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
+        cv::cvtColor(auxFrame, m_frameGray2, COLOR_BGR2GRAY);
+
+        if (m_process) {
+            memcpy(I0, m_frameGray.data, width*height * sizeof(uint8_t));
+            memcpy(I1, m_frameGray2.data, width*height * sizeof(uint8_t));
+
+            Dual_TVL1_optic_flow_multiscale(
+				I0, I1, u, v, width, height, tau, lambda, theta,
+				nscales, zfactor, nwarps, epsilon, 0);
+
+            cv::Mat flowData = cv::Mat(width, height, CV_32F, const_cast<float*>(u)).clone();
+            flowToColor(flowData, m_frameGray);
+        }
+            //process_frame(m_frameGray);
 
         timer.stop();
 
-        Mat img_to_show = m_frameGray;
+        cv::Mat imgToShow = m_frameGray;
 
         std::ostringstream msg, msg2;
         int currentFPS = 1000 / timer.getTimeMilli();
@@ -170,12 +231,12 @@ int App::run() {
             << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
             << " (process: " << (m_process ? "True" : "False") << ")";
 
-        cv::putText(img_to_show, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-        cv::putText(img_to_show, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+        cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+        cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
 
         if (m_show_ui) {
             try {
-                imshow("Optic Flow", img_to_show);
+                cv::imshow("Optic Flow", imgToShow);
                 int key = waitKey(1);
                 switch (key) {
                 case 27:  // ESC
@@ -193,18 +254,26 @@ int App::run() {
             }
             catch (const std::exception& e) {
                 std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
-                if (processedFrames > 0)
+                if (processedFrames > 0) {
+                    delete[] I0;
+                    delete[] I1;
+                    delete[] u;
                     throw;
+                }
                 m_show_ui = false;  // UI is not available
             }
         }
 
         processedFrames++;
+        m_frame = auxFrame;
 
         if (!m_show_ui && (processedFrames > 100)) 
             m_running = false;
     }
 
+    delete[] u;
+    delete[] I0;
+    delete[] I1;
     return 0;
 }
 
@@ -229,25 +298,25 @@ int main(int argc, char** argv)
         if (!cmd.check())
         {
             cmd.printErrors();
-            return 1;
+            return EXIT_FAILURE;
         }
         app.run();
     }
     catch (const cv::Exception& e)
     {
         std::cout << "FATAL: OpenCV error: " << e.what() << std::endl;
-        return 1;
+        return EXIT_FAILURE;
     }
     catch (const std::exception& e)
     {
         std::cout << "FATAL: C++ error: " << e.what() << std::endl;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     catch (...)
     {
         std::cout << "FATAL: unknown C++ exception" << std::endl;
-        return 1;
+        return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

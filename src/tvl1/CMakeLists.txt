@@ -7,10 +7,10 @@ set(This tvl1)
 
 set(Source
     main.cpp
-    # tvl1.cpp
-    # zoom.c
-    # mask.c
-    # bicubic_interpolation.c
+    tvl1.cpp
+    zoom.c
+    mask.c
+    bicubic_interpolation.cpp
 )
 
 set(supported_devices
@@ -41,7 +41,7 @@ find_package(IntelSYCL REQUIRED)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source})
-#add_sycl_to_target(TARGET ${This} SOURCES ${Sources})
+add_sycl_to_target(TARGET ${This} SOURCES "main.cpp")
 
 set(CXXFLAGS "-O3" "-fsycl-unnamed-lambda" "-fsycl" ${EXTRA_FLAGS})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})

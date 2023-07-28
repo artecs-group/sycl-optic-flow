@@ -227,8 +227,7 @@ int App::run() {
 				I0, I1, u, v, width, height, tau, lambda, theta,
 				nscales, zfactor, nwarps, epsilon, 0);
 
-            fixFlowVector(width*height, 2, u, clearFlow);
-            flowToColor(width, height, clearFlow, m_frameGray);
+            flowToColor(width, height, u, m_frameGray);
         }
         timer.stop();
 

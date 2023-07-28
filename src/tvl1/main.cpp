@@ -179,26 +179,12 @@ int App::run() {
 
     const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
-    constexpr float zfactor{0.5};
-    constexpr float tau{0.25};
-    constexpr float lambda{0.15};
-    constexpr float theta{0.3};
-    constexpr int nwarps{5};
-    constexpr float epsilon{0.01};
-
-    //Set the number of scales according to the size of the
-    //images.  The value N is computed to assure that the smaller
-    //images of the pyramid don't have a size smaller than 16x16
-    float nscales = 100; 
-    const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
-    if (N < nscales) nscales = N;
 
     // buffers required for the image proccesing
     uint8_t* I0 = new uint8_t[width * height]{0};
     uint8_t* I1 = new uint8_t[width * height]{0};
-    float* u = new float[width * height * 2]{0};
-    float* v = u + width*height;
-    float* clearFlow = new float[width * height * 2]{0};
+
+    TV_L1 tvl1 = TV_L1(width, height);
 
     int processedFrames = 0;
 
@@ -223,11 +209,8 @@ int App::run() {
             memcpy(I0, m_frameGray.data, width*height * sizeof(uint8_t));
             memcpy(I1, m_frameGray2.data, width*height * sizeof(uint8_t));
 
-            Dual_TVL1_optic_flow_multiscale(
-				I0, I1, u, v, width, height, tau, lambda, theta,
-				nscales, zfactor, nwarps, epsilon, 0);
-
-            flowToColor(width, height, u, m_frameGray);
+            tvl1.runDualTVL1Multiscale(I0, I1);
+            flowToColor(width, height, tvl1.getU(), m_frameGray);
         }
         timer.stop();
 
@@ -266,8 +249,6 @@ int App::run() {
                 if (processedFrames > 0) {
                     delete[] I0;
                     delete[] I1;
-                    delete[] u;
-                    delete[] clearFlow;
                     throw;
                 }
                 m_show_ui = false;  // UI is not available
@@ -281,10 +262,8 @@ int App::run() {
             m_running = false;
     }
 
-    delete[] u;
     delete[] I0;
     delete[] I1;
-    delete[] clearFlow;
     return 0;
 }
 

@@ -23,7 +23,7 @@ public:
     bool doProcess() { return m_process; }
     void setRunning(bool running)      { m_running = running; }
     void setDoProcess(bool process)    { m_process = process; }
-    void flowToColor(const cv::Mat& flowData, cv::Mat& outFrame); 
+    void flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame); 
 protected:
     void handleKey(char key);
 private:
@@ -82,8 +82,8 @@ void App::initVideoSource()
         m_cap.open(m_camera_id);
         if (!m_cap.isOpened())
             throw std::runtime_error(std::string("can't open camera: ") + std::to_string(m_camera_id));
-        m_cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-        m_cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+        // m_cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+        // m_cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
     }
     else
         throw std::runtime_error(std::string("specify video source"));
@@ -126,17 +126,35 @@ void App::process_frame(cv::Mat& frame)
 }
 
 
-void App::flowToColor(const cv::Mat& flowData, cv::Mat& outFrame) {
-    cv::Mat flow_magnitude, flow_angle;
-    cv::cartToPolar(flowData.col(0), flowData.col(1), flow_magnitude, flow_angle, true);
+void App::flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame) {
+    cv::Mat flow_magnitude(height, width, CV_32F);
+    cv::Mat flow_angle(height, width, CV_32F);
 
-    cv::Mat hsv(flowData.rows, flowData.cols, CV_8UC3, cv::Scalar(0, 255, 255));
+    // Populate the flow_magnitude and flow_angle matrices from the flowData array
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int index = y * width + x;
+            float u = flowData[index];
+            float v = flowData[index + width * height];
+            flow_magnitude.at<float>(y, x) = std::sqrt(u * u + v * v);
+            flow_angle.at<float>(y, x) = std::atan2(v, u);
+        }
+    }
+
+    flow_magnitude = cv::min(flow_magnitude * 10.0f, 255.0f);
+    flow_magnitude.convertTo(flow_magnitude, CV_8U);
+
+    flow_angle = flow_angle * 180.0f / CV_PI / 2.0f;
+    flow_angle.convertTo(flow_angle, CV_8U);
+
+    cv::Mat hsv(height, width, CV_8UC3, cv::Scalar(0, 255, 255));
 
     hsv.at<cv::Vec3b>(cv::Point(0, 0))[0] = 0;
-    for (int y = 0; y < flowData.rows; ++y) {
-        for (int x = 0; x < flowData.cols; ++x) {
-            hsv.at<cv::Vec3b>(y, x)[0] = flow_angle.at<float>(y, x);
-            hsv.at<cv::Vec3b>(y, x)[2] = std::min(static_cast<int>(flow_magnitude.at<float>(y, x) * 10), 255);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            hsv.at<cv::Vec3b>(y, x)[0] = static_cast<uint8_t>(flow_angle.at<uint8_t>(y, x));
+            hsv.at<cv::Vec3b>(y, x)[1] = 255;
+            hsv.at<cv::Vec3b>(y, x)[2] = flow_magnitude.at<uint8_t>(y, x);
         }
     }
 
@@ -176,10 +194,11 @@ int App::run() {
     if (N < nscales) nscales = N;
 
     // buffers required for the image proccesing
-    uint8_t* I0 = new uint8_t[width * height];
-    uint8_t* I1 = new uint8_t[width * height];
-    float* u = new float[width * height * 2];
+    uint8_t* I0 = new uint8_t[width * height]{0};
+    uint8_t* I1 = new uint8_t[width * height]{0};
+    float* u = new float[width * height * 2]{0};
     float* v = u + width*height;
+    float* clearFlow = new float[width * height * 2]{0};
 
     int processedFrames = 0;
 
@@ -208,11 +227,9 @@ int App::run() {
 				I0, I1, u, v, width, height, tau, lambda, theta,
 				nscales, zfactor, nwarps, epsilon, 0);
 
-            cv::Mat flowData = cv::Mat(width, height, CV_32F, const_cast<float*>(u)).clone();
-            flowToColor(flowData, m_frameGray);
+            fixFlowVector(width*height, 2, u, clearFlow);
+            flowToColor(width, height, clearFlow, m_frameGray);
         }
-            //process_frame(m_frameGray);
-
         timer.stop();
 
         cv::Mat imgToShow = m_frameGray;
@@ -220,7 +237,7 @@ int App::run() {
         std::ostringstream msg, msg2;
         int currentFPS = 1000 / timer.getTimeMilli();
         msg << devName;
-        msg2 << "FPS " << currentFPS << " (" << m_frame.size
+        msg2 << "FPS " << currentFPS << " (" << imgToShow.size
             << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
             << " (process: " << (m_process ? "True" : "False") << ")";
 
@@ -251,6 +268,7 @@ int App::run() {
                     delete[] I0;
                     delete[] I1;
                     delete[] u;
+                    delete[] clearFlow;
                     throw;
                 }
                 m_show_ui = false;  // UI is not available
@@ -258,7 +276,7 @@ int App::run() {
         }
 
         processedFrames++;
-        m_frame = auxFrame;
+        auxFrame.copyTo(m_frame);
 
         if (!m_show_ui && (processedFrames > 100)) 
             m_running = false;
@@ -267,6 +285,7 @@ int App::run() {
     delete[] u;
     delete[] I0;
     delete[] I1;
+    delete[] clearFlow;
     return 0;
 }
 

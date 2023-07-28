@@ -50,6 +50,6 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source} ${Headers})
 add_sycl_to_target(TARGET ${This} SOURCES "main.cpp")
 
-set(CXXFLAGS "-O3" "-fsycl-unnamed-lambda" "-fsycl" ${EXTRA_FLAGS})
+set(CXXFLAGS "-O3" "-fsycl-unnamed-lambda" "-fsycl" "-fopenmp" ${EXTRA_FLAGS})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})
 target_link_libraries(${This} ${OpenCV_LIBS} ${CXXFLAGS} "-fsycl-device-code-split=per_kernel" sycl)

@@ -55,4 +55,6 @@ void Dual_TVL1_optic_flow_multiscale(
     const bool  verbose  // enable/disable the verbose mode
 );
 
+void fixFlowVector(int n, int pd, const float* in, float* out);
+
 #endif

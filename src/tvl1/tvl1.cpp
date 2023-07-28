@@ -425,3 +425,11 @@ void Dual_TVL1_optic_flow_multiscale(
 	delete[] nx;
 	delete[] ny;
 }
+
+
+void fixFlowVector(int n, int pd, const float* in, float* out) {
+	#pragma omp parallel for simd
+	for (size_t l = 0; l < pd; l++)
+		for (size_t i = 0; i < n; i++)
+			out[pd*i + l] = in[n*l + i];
+}

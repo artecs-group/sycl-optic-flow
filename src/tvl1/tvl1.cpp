@@ -7,20 +7,13 @@
 // Copyright (C) 2011, Javier Sánchez Pérez <jsanchez@dis.ulpgc.es>
 // All rights reserved.
 
-
-#ifndef DUAL_TVL1_OPTIC_FLOW_H
-#define DUAL_TVL1_OPTIC_FLOW_H
-
 #include <cmath>
 #include <iostream>
 
-#include "mask.c"
-#include "bicubic_interpolation.cpp"
-#include "zoom.c"
-
-#define MAX_ITERATIONS 300
-#define PRESMOOTHING_SIGMA 0.8
-#define GRAD_IS_ZERO 1E-10
+#include "tvl1.hpp"
+#include "mask/mask.hpp"
+#include "bicubic_interpolation/bicubic_interpolation.hpp"
+#include "zoom/zoom.hpp"
 
 /**
  * Implementation of the Zach, Pock and Bischof dual TV-L1 optic flow method
@@ -44,19 +37,19 @@
  **/
 template<typename T>
 void Dual_TVL1_optic_flow(
-		T *I0,           // source image
-		T *I1,           // target image
-		float *u1,           // x component of the optical flow
-		float *u2,           // y component of the optical flow
-		const int   nx,      // image width
-		const int   ny,      // image height
-		const float tau,     // time step
-		const float lambda,  // weight parameter for the data term
-		const float theta,   // weight parameter for (u - v)²
-		const int   warps,   // number of warpings per scale
-		const float epsilon, // tolerance for numerical convergence
-		const bool  verbose  // enable/disable the verbose mode
-		)
+	T *I0,           // source image
+	T *I1,           // target image
+	float *u1,           // x component of the optical flow
+	float *u2,           // y component of the optical flow
+	const int   nx,      // image width
+	const int   ny,      // image height
+	const float tau,     // time step
+	const float lambda,  // weight parameter for the data term
+	const float theta,   // weight parameter for (u - v)²
+	const int   warps,   // number of warpings per scale
+	const float epsilon, // tolerance for numerical convergence
+	const bool  verbose  // enable/disable the verbose mode
+)
 {
 	const int   size = nx * ny;
 	const float l_t = lambda * theta;
@@ -224,12 +217,42 @@ void Dual_TVL1_optic_flow(
 	delete[] u2y;
 }
 
+template void Dual_TVL1_optic_flow(
+	uint8_t *I0,           // source image
+	uint8_t *I1,           // target image
+	float *u1,           // x component of the optical flow
+	float *u2,           // y component of the optical flow
+	const int   nx,      // image width
+	const int   ny,      // image height
+	const float tau,     // time step
+	const float lambda,  // weight parameter for the data term
+	const float theta,   // weight parameter for (u - v)²
+	const int   warps,   // number of warpings per scale
+	const float epsilon, // tolerance for numerical convergence
+	const bool  verbose  // enable/disable the verbose mode
+);
+
+template void Dual_TVL1_optic_flow(
+	float *I0,           // source image
+	float *I1,           // target image
+	float *u1,           // x component of the optical flow
+	float *u2,           // y component of the optical flow
+	const int   nx,      // image width
+	const int   ny,      // image height
+	const float tau,     // time step
+	const float lambda,  // weight parameter for the data term
+	const float theta,   // weight parameter for (u - v)²
+	const int   warps,   // number of warpings per scale
+	const float epsilon, // tolerance for numerical convergence
+	const bool  verbose  // enable/disable the verbose mode
+);
+
 /**
  *
  * Compute the max and min of an array
  *
  **/
-static void getminmax(
+void getminmax(
 	float *min,     // output min
 	float *max,     // output max
 	const uint8_t *x, // input array
@@ -256,7 +279,7 @@ void image_normalization(
 		float *I0n,       // normalized output image0
 		float *I1n,       // normalized output image1
 		int size          // size of the image
-		)
+)
 {
 	float max0, max1, min0, min1;
 
@@ -402,6 +425,3 @@ void Dual_TVL1_optic_flow_multiscale(
 	delete[] nx;
 	delete[] ny;
 }
-
-
-#endif//DUAL_TVL1_OPTIC_FLOW_H

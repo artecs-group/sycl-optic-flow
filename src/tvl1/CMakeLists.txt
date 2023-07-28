@@ -5,12 +5,19 @@ set(CXX_STANDARD_REQUIRED 17)
 
 set(This tvl1)
 
+set(Headers
+    tvl1.hpp
+    zoom/zoom.hpp
+    mask/mask.hpp
+    bicubic_interpolation/bicubic_interpolation.hpp
+)
+
 set(Source
     main.cpp
     tvl1.cpp
-    zoom.c
-    mask.c
-    bicubic_interpolation.cpp
+    zoom/zoom.cpp
+    mask/mask.cpp
+    bicubic_interpolation/bicubic_interpolation.cpp
 )
 
 set(supported_devices
@@ -40,7 +47,7 @@ endif()
 find_package(IntelSYCL REQUIRED)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
-add_executable(${This} ${Source})
+add_executable(${This} ${Source} ${Headers})
 add_sycl_to_target(TARGET ${This} SOURCES "main.cpp")
 
 set(CXXFLAGS "-O3" "-fsycl-unnamed-lambda" "-fsycl" ${EXTRA_FLAGS})

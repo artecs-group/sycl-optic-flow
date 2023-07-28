@@ -6,14 +6,11 @@
 // Copyright (C) 2012, Javier Sánchez Pérez <jsanchez@dis.ulpgc.es>
 // All rights reserved.
 
+#include <cmath>
 
-#ifndef ZOOM_C
-#define ZOOM_C
-
-#include "mask.c"
-#include "bicubic_interpolation.cpp"
-
-#define ZOOM_SIGMA_ZERO 0.6
+#include "zoom.hpp"
+#include "../mask/mask.hpp"
+#include "../bicubic_interpolation/bicubic_interpolation.hpp"
 
 /**
   *
@@ -57,7 +54,7 @@ void zoom_out(
 	zoom_size(nx, ny, &nxx, &nyy, factor);
 
 	// compute the Gaussian sigma for smoothing
-	const float sigma = ZOOM_SIGMA_ZERO * sqrt(1.0/(factor*factor) - 1.0);
+	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
 	gaussian(Is, nx, ny, sigma);
@@ -108,7 +105,3 @@ void zoom_in(
 		Iout[i1 * nxx + j1] = g;
 	}
 }
-
-
-
-#endif//ZOOM_C

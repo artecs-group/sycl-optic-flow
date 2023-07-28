@@ -6,23 +6,10 @@
 // Copyright (C) 2011, Javier Sánchez Pérez <jsanchez@dis.ulpgc.es>
 // All rights reserved.
 
+#include <iostream>
+#include <cmath>
 
-#ifndef MASK_C
-#define MASK_C
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-
-
-
-#define BOUNDARY_CONDITION_DIRICHLET 0
-#define BOUNDARY_CONDITION_REFLECTING 1
-#define BOUNDARY_CONDITION_PERIODIC 2
-
-#define DEFAULT_GAUSSIAN_WINDOW_SIZE 5
-#define DEFAULT_BOUNDARY_CONDITION BOUNDARY_CONDITION_REFLECTING
-
+#include "mask.hpp"
 
 /**
  *
@@ -148,8 +135,7 @@ void forward_gradient(
  * Function to compute the gradient with centered differences
  *
  **/
-template<typename T>
-void centered_gradient(
+template<typename T> void centered_gradient(
 		const T *input,  //input image
 		float *dx,           //computed x derivative
 		float *dy,           //computed y derivative
@@ -208,6 +194,22 @@ void centered_gradient(
 	dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
 }
 
+template void centered_gradient(
+	const uint8_t *input,  //input image
+	float *dx,           //computed x derivative
+	float *dy,           //computed y derivative
+	const int nx,        //image width
+	const int ny         //image height
+);
+
+template void centered_gradient(
+	const float *input,  //input image
+	float *dx,           //computed x derivative
+	float *dy,           //computed y derivative
+	const int nx,        //image width
+	const int ny         //image height
+);
+
 
 /**
  *
@@ -230,8 +232,8 @@ void gaussian(
 	const int   bdy  = ydim + size;
 
 	if (boundary_condition && size > xdim) {
-		fprintf(stderr, "GaussianSmooth: sigma too large\n");
-		abort();
+		std::cerr << "GaussianSmooth: sigma too large." << std::endl;
+		throw;
 	}
 
 	// compute the coefficients of the 1D convolution kernel
@@ -331,6 +333,3 @@ void gaussian(
 	delete[] R;
 	delete[] T;
 }
-
-
-#endif//MASK_C

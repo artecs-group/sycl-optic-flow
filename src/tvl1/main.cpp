@@ -1,9 +1,3 @@
-/* icpx -fsycl sycl_opencv_interop.cpp -o sycl_opencv_interop `pkg-config --cflags --libs opencv4`
- *
- * The example of interoperability between SYCL/OpenCL and OpenCV.
- * - SYCL: https://www.khronos.org/sycl/
- * - SYCL runtime parameters: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
- */
 #include <string>
 #include <cmath>
 #include <CL/sycl.hpp>
@@ -13,13 +7,12 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include "tvl1.cpp"
+#include "tvl1.hpp"
 
 using namespace cv;
 
 
-class App
-{
+class App {
 public:
     App(const CommandLineParser& cmd);
     void initVideoSource();

@@ -322,7 +322,7 @@ template void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float
  * Compute the max and min of an array
  *
  **/
-void getminmax(
+void TV_L1::getminmax(
 	float *min,     // output min
 	float *max,     // output max
 	const uint8_t *x, // input array
@@ -343,7 +343,7 @@ void getminmax(
  * Function to normalize the images between 0 and 255
  *
  **/
-void image_normalization(
+void TV_L1::image_normalization(
 		const uint8_t *I0,  // input image0
 		const uint8_t *I1,  // input image1
 		float *I0n,       // normalized output image0

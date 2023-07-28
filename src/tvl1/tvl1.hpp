@@ -16,9 +16,12 @@ public:
     float* getU() { return _u; };
     void runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1);
 
+private:
     template<typename T>
     void dualTVL1(const T* I0, const T* I1, float* u1, float* u2, int nx, int ny);
-private:
+    void image_normalization(const uint8_t *I0, const uint8_t *I1, float* I0n, float* I1n, int size);
+    void getminmax(float *min, float* max, const uint8_t* x, int n);
+
     float* _u;           // x component of the optical flow
     float* _v;           // y component of the optical flow
 
@@ -45,14 +48,6 @@ static void getminmax(
     float *max,     // output max
     const uint8_t *x, // input array
     int n           // array size
-);
-
-void image_normalization(
-    const uint8_t *I0,  // input image0
-    const uint8_t *I1,  // input image1
-    float *I0n,       // normalized output image0
-    float *I1n,       // normalized output image1
-    int size          // size of the image
 );
 
 #endif

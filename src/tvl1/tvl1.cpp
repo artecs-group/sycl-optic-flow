@@ -50,8 +50,12 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	_nx  = new int[_nscales];
 	_ny  = new int[_nscales];
 
-	_I0s[0] = new float[_width*_height];
-	_I1s[0] = new float[_width*_height];
+	for (int i = 0; i < _nscales; i++) {
+		_I0s[i] = new float[_width*_height];
+		_I1s[i] = new float[_width*_height];
+		_u1s[i] = new float[_width*_height];
+		_u2s[i] = new float[_width*_height];
+	}
 
 	_I1x    = new float[_width*_height];
 	_I1y    = new float[_width*_height];
@@ -77,8 +81,13 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 
 TV_L1::~TV_L1() {
 	delete[] _u;
-	delete[] _I0s[0];
-	delete[] _I1s[0];
+	
+	for (int i = 0; i < _nscales; i++) {
+		delete[] _I0s[i];
+		delete[] _I1s[i];
+		delete[] _u1s[i];
+		delete[] _u2s[i];
+	}
 
 	delete[] _I0s;
 	delete[] _I1s;
@@ -133,12 +142,6 @@ void TV_L1::runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1) {
 		zoom_size(_nx[s-1], _ny[s-1], &_nx[s], &_ny[s], _zfactor);
 		const int sizes = _nx[s] * _ny[s];
 
-		// allocate memory
-		_I0s[s] = new float[sizes];
-		_I1s[s] = new float[sizes];
-		_u1s[s] = new float[sizes];
-		_u2s[s] = new float[sizes];
-
 		// zoom in the images to create the pyramidal structure
 		zoom_out(_I0s[s-1], _I0s[s], _nx[s-1], _ny[s-1], _zfactor);
 		zoom_out(_I1s[s-1], _I1s[s], _nx[s-1], _ny[s-1], _zfactor);
@@ -172,15 +175,6 @@ void TV_L1::runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1) {
 			_u1s[s-1][i] *= (float) 1.0 / _zfactor;
 			_u2s[s-1][i] *= (float) 1.0 / _zfactor;
 		}
-	}
-
-	// delete allocated memory
-	for (int i = 1; i < _nscales; i++)
-	{
-		delete[] _I0s[i];
-		delete[] _I1s[i];
-		delete[] _u1s[i];
-		delete[] _u2s[i];
 	}
 }
 

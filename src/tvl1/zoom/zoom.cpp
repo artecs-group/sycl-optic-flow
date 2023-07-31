@@ -14,25 +14,6 @@
 
 /**
   *
-  * Compute the size of a zoomed image from the zoom factor
-  *
-**/
-void zoom_size(
-	int nx,      // width of the orignal image
-	int ny,      // height of the orignal image
-	int *nxx,    // width of the zoomed image
-	int *nyy,    // height of the zoomed image
-	float factor // zoom factor between 0 and 1
-)
-{
-	//compute the new size corresponding to factor
-	//we add 0.5 for rounding off to the closest number
-	*nxx = (int)((float) nx * factor + 0.5);
-	*nyy = (int)((float) ny * factor + 0.5);
-}
-
-/**
-  *
   * Downsample an image
   *
 **/
@@ -41,11 +22,11 @@ void zoom_out(
 	float *Iout,       // output image
 	const int nx,      // image width
 	const int ny,      // image height
-	const float factor // zoom factor between 0 and 1
+	const float factor, // zoom factor between 0 and 1
+	float* Is,           // temporary working image
+	float* gaussBuffer   // Gaussian buffer
 )
 {
-	// temporary working image
-	float *Is = new float[nx * ny];
 	for(int i = 0; i < nx * ny; i++)
 		Is[i] = I[i];
 
@@ -57,21 +38,18 @@ void zoom_out(
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
-	gaussian(Is, nx, ny, sigma);
+	gaussian(Is, nx, ny, sigma, gaussBuffer);
 
 	// re-sample the image using bicubic interpolation
 	#pragma omp parallel for
 	for (int i1 = 0; i1 < nyy; i1++)
-	for (int j1 = 0; j1 < nxx; j1++)
-	{
-		const float i2  = (float) i1 / factor;
-		const float j2  = (float) j1 / factor;
+		for (int j1 = 0; j1 < nxx; j1++) {
+			const float i2  = (float) i1 / factor;
+			const float j2  = (float) j1 / factor;
 
-		float g = bicubic_interpolation_at(Is, j2, i2, nx, ny, false);
-		Iout[i1 * nxx + j1] = g;
-	}
-
-	delete[] Is;
+			float g = bicubic_interpolation_at(Is, j2, i2, nx, ny, false);
+			Iout[i1 * nxx + j1] = g;
+		}
 }
 
 

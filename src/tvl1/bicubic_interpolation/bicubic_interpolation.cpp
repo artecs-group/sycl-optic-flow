@@ -9,10 +9,6 @@
 #include <cstdint>
 #include "bicubic_interpolation.hpp"
 
-//0 Neumann
-//1 Periodic
-//2 Symmetric
-
 /**
   *
   * Neumann boundary condition test
@@ -33,70 +29,15 @@ int neumann_bc(int x, int nx, bool *out) {
 	return x;
 }
 
-/**
-  *
-  * Periodic boundary condition test
-  *
-**/
-int periodic_bc(int x, int nx, bool *out)
-{
-	if(x < 0)
-	{
-		const int n   = 1 - (int)(x/(nx+1));
-		const int ixx = x + n * nx;
-
-		x =   ixx% nx;
-		*out = true;
-	}
-	else if(x >= nx)
-	{
-		x = x % nx;
-		*out = true;
-	}
-
-	return x;
-}
-
-
-/**
-  *
-  * Symmetric boundary condition test
-  *
-**/
-int symmetric_bc(int x, int nx, bool *out)
-{
-	if(x < 0)
-	{
-		const int borde = nx - 1;
-		const int xx = -x;
-		const int n  = (int)(xx/borde) % 2;
-
-		if ( n ) x = borde - ( xx % borde );
-		else x = xx % borde;
-		*out = true;
-	}
-	else if ( x >= nx )
-	{
-		const int borde = nx - 1;
-		const int n = (int)(x/borde) % 2;
-
-		if ( n ) x = borde - ( x % borde );
-		else x = x % borde;
-		*out = true;
-	}
-
-	return x;
-}
-
 
 /**
   *
   * Cubic interpolation in one dimension
   *
 **/
-double cubic_interpolation_cell (
-	double v[4],  //interpolation points
-	double x      //point to be interpolated
+inline float cubic_interpolation_cell (
+	const float v[4],  //interpolation points
+	float x      //point to be interpolated
 )
 {
 	return  v[1] + 0.5 * x * (v[2] - v[0] +
@@ -110,13 +51,13 @@ double cubic_interpolation_cell (
   * Bicubic interpolation in two dimensions
   *
 **/
-double bicubic_interpolation_cell (
-	double p[4][4], //array containing the interpolation points
-	double x,       //x position to be interpolated
-	double y        //y position to be interpolated
+inline float bicubic_interpolation_cell (
+	const float p[4][4], //array containing the interpolation points
+	float* v, 
+	float x,       //x position to be interpolated
+	float y        //y position to be interpolated
 )
 {
-	double v[4];
 	v[0] = cubic_interpolation_cell(p[0], y);
 	v[1] = cubic_interpolation_cell(p[1], y);
 	v[2] = cubic_interpolation_cell(p[2], y);
@@ -130,9 +71,8 @@ double bicubic_interpolation_cell (
   * Detect if the point goes outside the image domain.
   *
 **/
-template<typename T>
 float bicubic_interpolation_at(
-	const T *input, //image to be interpolated
+	const float* input, //image to be interpolated
 	const float  uu,    //x component of the vector field
 	const float  vv,    //y component of the vector field
 	const int    nx,    //image width
@@ -144,110 +84,53 @@ float bicubic_interpolation_at(
 	const int sy = (vv < 0)? -1: 1;
 
 	int x, y, mx, my, dx, dy, ddx, ddy;
-	bool out[1] = {false};
+	bool out{false};
 
-	//apply the corresponding boundary conditions
-	switch(BOUNDARY_CONDITION) {
+	x   = neumann_bc((int) uu, nx, &out);
+	y   = neumann_bc((int) vv, ny, &out);
+	mx  = neumann_bc((int) uu - sx, nx, &out);
+	my  = neumann_bc((int) vv - sx, ny, &out);
+	dx  = neumann_bc((int) uu + sx, nx, &out);
+	dy  = neumann_bc((int) vv + sy, ny, &out);
+	ddx = neumann_bc((int) uu + 2*sx, nx, &out);
+	ddy = neumann_bc((int) vv + 2*sy, ny, &out);
 
-		case 0: x   = neumann_bc((int) uu, nx, out);
-			y   = neumann_bc((int) vv, ny, out);
-			mx  = neumann_bc((int) uu - sx, nx, out);
-			my  = neumann_bc((int) vv - sx, ny, out);
-			dx  = neumann_bc((int) uu + sx, nx, out);
-			dy  = neumann_bc((int) vv + sy, ny, out);
-			ddx = neumann_bc((int) uu + 2*sx, nx, out);
-			ddy = neumann_bc((int) vv + 2*sy, ny, out);
-			break;
-
-		case 1: x   = periodic_bc((int) uu, nx, out);
-			y   = periodic_bc((int) vv, ny, out);
-			mx  = periodic_bc((int) uu - sx, nx, out);
-			my  = periodic_bc((int) vv - sx, ny, out);
-			dx  = periodic_bc((int) uu + sx, nx, out);
-			dy  = periodic_bc((int) vv + sy, ny, out);
-			ddx = periodic_bc((int) uu + 2*sx, nx, out);
-			ddy = periodic_bc((int) vv + 2*sy, ny, out);
-			break;
-
-		case 2: x   = symmetric_bc((int) uu, nx, out);
-			y   = symmetric_bc((int) vv, ny, out);
-			mx  = symmetric_bc((int) uu - sx, nx, out);
-			my  = symmetric_bc((int) vv - sx, ny, out);
-			dx  = symmetric_bc((int) uu + sx, nx, out);
-			dy  = symmetric_bc((int) vv + sy, ny, out);
-			ddx = symmetric_bc((int) uu + 2*sx, nx, out);
-			ddy = symmetric_bc((int) vv + 2*sy, ny, out);
-			break;
-
-		default:x   = neumann_bc((int) uu, nx, out);
-			y   = neumann_bc((int) vv, ny, out);
-			mx  = neumann_bc((int) uu - sx, nx, out);
-			my  = neumann_bc((int) vv - sx, ny, out);
-			dx  = neumann_bc((int) uu + sx, nx, out);
-			dy  = neumann_bc((int) vv + sy, ny, out);
-			ddx = neumann_bc((int) uu + 2*sx, nx, out);
-			ddy = neumann_bc((int) vv + 2*sy, ny, out);
-			break;
-	}
-
-	if(*out && border_out)
+	if(out && border_out)
 		return 0.0;
 
-	else
-	{
-		//obtain the interpolation points of the image
-		const float p11 = static_cast<float>(input[mx  + nx * my]);
-		const float p12 = static_cast<float>(input[x   + nx * my]);
-		const float p13 = static_cast<float>(input[dx  + nx * my]);
-		const float p14 = static_cast<float>(input[ddx + nx * my]);
+	//obtain the interpolation points of the image
+	const float p11 = input[mx  + nx * my];
+	const float p12 = input[x   + nx * my];
+	const float p13 = input[dx  + nx * my];
+	const float p14 = input[ddx + nx * my];
 
-		const float p21 = static_cast<float>(input[mx  + nx * y]);
-		const float p22 = static_cast<float>(input[x   + nx * y]);
-		const float p23 = static_cast<float>(input[dx  + nx * y]);
-		const float p24 = static_cast<float>(input[ddx + nx * y]);
+	const float p21 = input[mx  + nx * y];
+	const float p22 = input[x   + nx * y];
+	const float p23 = input[dx  + nx * y];
+	const float p24 = input[ddx + nx * y];
 
-		const float p31 = static_cast<float>(input[mx  + nx * dy]);
-		const float p32 = static_cast<float>(input[x   + nx * dy]);
-		const float p33 = static_cast<float>(input[dx  + nx * dy]);
-		const float p34 = static_cast<float>(input[ddx + nx * dy]);
+	const float p31 = input[mx  + nx * dy];
+	const float p32 = input[x   + nx * dy];
+	const float p33 = input[dx  + nx * dy];
+	const float p34 = input[ddx + nx * dy];
 
-		const float p41 = static_cast<float>(input[mx  + nx * ddy]);
-		const float p42 = static_cast<float>(input[x   + nx * ddy]);
-		const float p43 = static_cast<float>(input[dx  + nx * ddy]);
-		const float p44 = static_cast<float>(input[ddx + nx * ddy]);
+	const float p41 = input[mx  + nx * ddy];
+	const float p42 = input[x   + nx * ddy];
+	const float p43 = input[dx  + nx * ddy];
+	const float p44 = input[ddx + nx * ddy];
 
-		//create array
-		double pol[4][4] = {
-			{p11, p21, p31, p41},
-			{p12, p22, p32, p42},
-			{p13, p23, p33, p43},
-			{p14, p24, p34, p44}
-		};
+	//create array
+	float v[4];
+	const float pol[4][4] = {
+		{p11, p21, p31, p41},
+		{p12, p22, p32, p42},
+		{p13, p23, p33, p43},
+		{p14, p24, p34, p44}
+	};
 
-		//return interpolation
-		return bicubic_interpolation_cell(pol, uu-x, vv-y);
-	}
+	//return interpolation
+	return bicubic_interpolation_cell(pol, v, uu-x, vv-y);
 }
-
-template float bicubic_interpolation_at(
-	const uint8_t *input, //image to be interpolated
-	const float  uu,    //x component of the vector field
-	const float  vv,    //y component of the vector field
-	const int    nx,    //image width
-	const int    ny,    //image height
-	bool         border_out //if true, return zero outside the region
-);
-
-template float bicubic_interpolation_at(
-	const float *input, //image to be interpolated
-	const float  uu,    //x component of the vector field
-	const float  vv,    //y component of the vector field
-	const int    nx,    //image width
-	const int    ny,    //image height
-	bool         border_out //if true, return zero outside the region
-);
-
-
 
 
 /**
@@ -255,9 +138,8 @@ template float bicubic_interpolation_at(
   * Compute the bicubic interpolation of an image.
   *
 **/
-template<typename T>
 void bicubic_interpolation_warp(
-	const T *input,     // image to be warped
+	const float* input,     // image to be warped
 	const float *u,         // x component of the vector field
 	const float *v,         // y component of the vector field
 	float       *output,    // image warped with bicubic interpolation
@@ -271,31 +153,11 @@ void bicubic_interpolation_warp(
 		for(int j = 0; j < nx; j++)
 		{
 			const int   p  = i * nx + j;
-			const float uu = (float) (j + u[p]);
-			const float vv = (float) (i + v[p]);
+			const float uu = j + u[p];
+			const float vv = i + v[p];
 
 			// obtain the bicubic interpolation at position (uu, vv)
 			output[p] = bicubic_interpolation_at(input,
 					uu, vv, nx, ny, border_out);
 		}
 }
-
-template void bicubic_interpolation_warp(
-	const uint8_t *input,     // image to be warped
-	const float *u,         // x component of the vector field
-	const float *v,         // y component of the vector field
-	float       *output,    // image warped with bicubic interpolation
-	const int    nx,        // image width
-	const int    ny,        // image height
-	bool         border_out // if true, put zeros outside the region
-);
-
-template void bicubic_interpolation_warp(
-	const float *input,     // image to be warped
-	const float *u,         // x component of the vector field
-	const float *v,         // y component of the vector field
-	float       *output,    // image warped with bicubic interpolation
-	const int    nx,        // image width
-	const int    ny,        // image height
-	bool         border_out // if true, put zeros outside the region
-);

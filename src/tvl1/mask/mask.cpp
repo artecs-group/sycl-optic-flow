@@ -9,6 +9,8 @@
 #include <iostream>
 #include <cmath>
 
+#include "mkl.h"
+
 #include "mask.hpp"
 
 /**
@@ -135,8 +137,8 @@ void forward_gradient(
  * Function to compute the gradient with centered differences
  *
  **/
-template<typename T> void centered_gradient(
-		const T *input,  //input image
+void centered_gradient(
+		const float* input,  //input image
 		float *dx,           //computed x derivative
 		float *dy,           //computed y derivative
 		const int nx,        //image width
@@ -194,22 +196,6 @@ template<typename T> void centered_gradient(
 	dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
 }
 
-template void centered_gradient(
-	const uint8_t *input,  //input image
-	float *dx,           //computed x derivative
-	float *dy,           //computed y derivative
-	const int nx,        //image width
-	const int ny         //image height
-);
-
-template void centered_gradient(
-	const float *input,  //input image
-	float *dx,           //computed x derivative
-	float *dy,           //computed y derivative
-	const int nx,        //image width
-	const int ny         //image height
-);
-
 
 /**
  *
@@ -220,18 +206,17 @@ void gaussian(
 	float *I,             // input/output image
 	const int xdim,       // image width
 	const int ydim,       // image height
-	const double sigma    // Gaussian sigma
+	const double sigma,    // Gaussian sigma
+	float* buffer		   // Temporary buffer
 )
 {
-	const int boundary_condition = DEFAULT_BOUNDARY_CONDITION;
-	const int window_size = DEFAULT_GAUSSIAN_WINDOW_SIZE;
-
 	const double den  = 2*sigma*sigma;
-	const int   size = (int) (window_size * sigma) + 1 ;
+	const double sPi = sigma * std::sqrt(M_PI * 2);
+	const int   size = (int) (DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma) + 1 ;
 	const int   bdx  = xdim + size;
 	const int   bdy  = ydim + size;
 
-	if (boundary_condition && size > xdim) {
+	if (size > xdim) {
 		std::cerr << "GaussianSmooth: sigma too large." << std::endl;
 		throw;
 	}
@@ -239,97 +224,52 @@ void gaussian(
 	// compute the coefficients of the 1D convolution kernel
 	double B[size];
 	for(int i = 0; i < size; i++)
-		B[i] = 1 / (sigma * sqrt(2.0 * 3.1415926)) * exp(-i * i / den);
+		B[i] = 1 / sPi * std::exp(-i * i / den);
 
 	// normalize the 1D convolution kernel
-	double norm = 0;
-	for(int i = 0; i < size; i++)
-		norm += B[i];
-	norm *= 2;
-	norm -= B[0];
-	for(int i = 0; i < size; i++)
-		B[i] /= norm;
+	double norm = cblas_dasum (size, B, 1);
+	norm = norm * 2 - B[0];
+	cblas_dscal (size, 1/norm, B, 1);
 
 	// convolution of each line of the input image
-	double *R = new double[size + xdim + size];
-
 	for (int k = 0; k < ydim; k++)
 	{
 		int i, j;
 		for (i = size; i < bdx; i++)
-			R[i] = I[k * xdim + i - size];
+			buffer[i] = I[k * xdim + i - size];
 
-		switch (boundary_condition)
-		{
-		case BOUNDARY_CONDITION_DIRICHLET:
-			for(i = 0, j = bdx; i < size; i++, j++)
-				R[i] = R[j] = 0;
-			break;
-
-		case BOUNDARY_CONDITION_REFLECTING:
-			for(i = 0, j = bdx; i < size; i++, j++) {
-				R[i] = I[k * xdim + size-i];
-				R[j] = I[k * xdim + xdim-i-1];
-			}
-			break;
-
-		case BOUNDARY_CONDITION_PERIODIC:
-			for(i = 0, j = bdx; i < size; i++, j++) {
-				R[i] = I[k * xdim + xdim-size+i];
-				R[j] = I[k * xdim + i];
-			}
-			break;
+		for(i = 0, j = bdx; i < size; i++, j++) {
+			buffer[i] = I[k * xdim + size-i];
+			buffer[j] = I[k * xdim + xdim-i-1];
 		}
 
 		for (i = size; i < bdx; i++)
 		{
-			double sum = B[0] * R[i];
+			double sum = B[0] * buffer[i];
 			for (j = 1; j < size; j++ )
-				sum += B[j] * ( R[i-j] + R[i+j] );
+				sum += B[j] * ( buffer[i-j] + buffer[i+j] );
 			I[k * xdim + i - size] = sum;
 		}
 	}
 
 	// convolution of each column of the input image
-	double *T = new double[size + ydim + size];
-
 	for (int k = 0; k < xdim; k++)
 	{
 		int i, j;
 		for (i = size; i < bdy; i++)
-			T[i] = I[(i - size) * xdim + k];
+			buffer[i] = I[(i - size) * xdim + k];
 
-		switch (boundary_condition)
-		{
-		case BOUNDARY_CONDITION_DIRICHLET:
-			for (i = 0, j = bdy; i < size; i++, j++)
-				T[i] = T[j] = 0;
-			break;
-
-		case BOUNDARY_CONDITION_REFLECTING:
-			for (i = 0, j = bdy; i < size; i++, j++) {
-				T[i] = I[(size-i) * xdim + k];
-				T[j] = I[(ydim-i-1) * xdim + k];
-			}
-			break;
-
-		case BOUNDARY_CONDITION_PERIODIC:
-			for( i = 0, j = bdx; i < size; i++, j++) {
-				T[i] = I[(ydim-size+i) * xdim + k];
-				T[j] = I[i * xdim + k];
-			}
-			break;
+		for (i = 0, j = bdy; i < size; i++, j++) {
+			buffer[i] = I[(size-i) * xdim + k];
+			buffer[j] = I[(ydim-i-1) * xdim + k];
 		}
 
 		for (i = size; i < bdy; i++)
 		{
-			double sum = B[0] * T[i];
+			double sum = B[0] * buffer[i];
 			for (j = 1; j < size; j++ )
-				sum += B[j] * (T[i-j] + T[i+j]);
+				sum += B[j] * (buffer[i-j] + buffer[i+j]);
 			I[(i - size) * xdim + k] = sum;
 		}
 	}
-
-	delete[] R;
-	delete[] T;
 }

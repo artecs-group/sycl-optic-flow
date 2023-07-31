@@ -17,10 +17,9 @@ public:
     void runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1);
 
 private:
-    template<typename T>
-    void dualTVL1(const T* I0, const T* I1, float* u1, float* u2, int nx, int ny);
-    void image_normalization(const uint8_t *I0, const uint8_t *I1, float* I0n, float* I1n, int size);
-    void getminmax(float *min, float* max, const uint8_t* x, int n);
+    void dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny);
+    void image_normalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
+    void convertToFloat(int size, const uint8_t *I0, const uint8_t *I1, float *_I0, float* _I1);
 
     float* _u;           // x component of the optical flow
     float* _v;           // y component of the optical flow
@@ -42,12 +41,5 @@ private:
     float _epsilon; // tolerance for numerical convergence
     bool _verbose;  // enable/disable the verbose mode
 };
-
-static void getminmax(
-    float *min,     // output min
-    float *max,     // output max
-    const uint8_t *x, // input array
-    int n           // array size
-);
 
 #endif

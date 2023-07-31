@@ -43,7 +43,6 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	_nscales = (N < nscales) ? N : nscales;
 
 	_u = new float[2 * _width*_height]{0};
-	_v = _u + _width*_height;
 
 	// allocate memory for the pyramid structure
 	_I0s = new float*[_nscales];
@@ -72,14 +71,9 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	_p12    = new float[_width*_height];
 	_p21    = new float[_width*_height];
 	_p22    = new float[_width*_height];
-	_div    = new float[_width*_height];
 	_grad   = new float[_width*_height];
 	_div_p1 = new float[_width*_height];
 	_div_p2 = new float[_width*_height];
-	_u1x    = new float[_width*_height];
-	_u1y    = new float[_width*_height];
-	_u2x    = new float[_width*_height];
-	_u2y    = new float[_width*_height];
 }
 
 TV_L1::~TV_L1() {
@@ -111,14 +105,9 @@ TV_L1::~TV_L1() {
 	delete[] _p12;
 	delete[] _p21;
 	delete[] _p22;
-	delete[] _div;
 	delete[] _grad;
 	delete[] _div_p1;
 	delete[] _div_p2;
-	delete[] _u1x;
-	delete[] _u1y;
-	delete[] _u2x;
-	delete[] _u2y;
 }
 
 
@@ -137,7 +126,7 @@ void TV_L1::runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1) {
 	const int size = _width * _height;
 
 	_u1s[0] = _u;
-	_u2s[0] = _v;
+	_u2s[0] = _u + _width*_height;
 	_nx [0] = _width;
 	_ny [0] = _height;
 
@@ -285,23 +274,23 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			error /= size;
 
 			// compute the gradient of the optical flow (Du1, Du2)
-			forward_gradient(u1, _u1x, _u1y, nx ,ny);
-			forward_gradient(u2, _u2x, _u2y, nx ,ny);
+			forward_gradient(u1, _div_p1, _v1, nx ,ny);
+			forward_gradient(u2, _div_p2, _v2, nx ,ny);
 
 			// estimate the values of the dual variable (p1, p2)
 			const float taut = _tau / _theta;
 			#pragma omp parallel for
 			for (int i = 0; i < size; i++)
 			{
-				const float g1   = std::hypot(_u1x[i], _u1y[i]);
-				const float g2   = std::hypot(_u2x[i], _u2y[i]);
+				const float g1   = std::hypot(_div_p1[i], _v1[i]);
+				const float g2   = std::hypot(_div_p2[i], _v2[i]);
 				const float ng1  = 1.0 + taut * g1;
 				const float ng2  = 1.0 + taut * g2;
 
-				_p11[i] = (_p11[i] + taut * _u1x[i]) / ng1;
-				_p12[i] = (_p12[i] + taut * _u1y[i]) / ng1;
-				_p21[i] = (_p21[i] + taut * _u2x[i]) / ng2;
-				_p22[i] = (_p22[i] + taut * _u2y[i]) / ng2;
+				_p11[i] = (_p11[i] + taut * _div_p1[i]) / ng1;
+				_p12[i] = (_p12[i] + taut * _v1[i]) / ng1;
+				_p21[i] = (_p21[i] + taut * _div_p2[i]) / ng2;
+				_p22[i] = (_p22[i] + taut * _v2[i]) / ng2;
 			}
 		}
 

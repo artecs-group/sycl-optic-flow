@@ -21,8 +21,7 @@ private:
     void image_normalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
     void convertToFloat(int size, const uint8_t *I0, const uint8_t *I1, float *_I0, float* _I1);
 
-    float* _u;           // x component of the optical flow
-    float* _v;           // y component of the optical flow
+    float* _u;           // x, y component of the optical flow
 
 	float **_I0s, **_I1s, **_u1s, **_u2s;
 	int *_nx, *_ny;

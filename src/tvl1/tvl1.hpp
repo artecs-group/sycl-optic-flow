@@ -11,7 +11,7 @@ class TV_L1 {
 public:
     TV_L1(int width, int height, float tau=0.25, float lambda=0.15, 
         float theta=0.3, int nscales=100, float zfactor=0.5, int warps=5,
-        float epsilon=0.01, bool verbose=false);
+        float epsilon=0.01);
     ~TV_L1();
     float* getU() { return _u; };
     void runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1);
@@ -27,7 +27,7 @@ private:
 	int *_nx, *_ny;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
-        *_p21, *_p22, *_div, *_grad, *_div_p1, *_div_p2, *_u1x, *_u1y, *_u2x, *_u2y;
+        *_p21, *_p22, *_grad, *_div_p1, *_div_p2;
 
     int _width;     // image width
     int _height;     // image height
@@ -38,7 +38,6 @@ private:
     float _zfactor; // factor for building the image piramid
     int _warps;   // number of warpings per scale
     float _epsilon; // tolerance for numerical convergence
-    bool _verbose;  // enable/disable the verbose mode
 };
 
 #endif

@@ -24,7 +24,7 @@
  **/
 
 TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int nscales,
-	float zfactor, int warps, float epsilon, bool verbose) 
+	float zfactor, int warps, float epsilon) 
 {
 	_width = width;
 	_height = height;
@@ -33,7 +33,6 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	_theta = theta;
 	_warps = warps;
 	_epsilon = epsilon;
-	_verbose = verbose;
 	_zfactor = zfactor;
 
     //Set the number of scales according to the size of the
@@ -293,9 +292,6 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 				_p22[i] = (_p22[i] + taut * _v2[i]) / ng2;
 			}
 		}
-
-		if (_verbose)
-			std::cerr << "Warping: " << warpings << ", Iterations: " << n << ", Error: " << error << std::endl;
 	}
 }
 

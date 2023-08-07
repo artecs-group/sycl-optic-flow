@@ -43,6 +43,10 @@ if(DEVICE STREQUAL "ngpu")
     set(EXTRA_FLAGS "-fsycl-targets=nvptx64-nvidia-cuda")
 endif()
 
+if(DEBUG)
+    message(STATUS "Added -g to compilation.")
+    set(EXTRA_FLAGS "-g")
+endif()
 
 find_package(IntelSYCL REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -50,7 +54,6 @@ include_directories(${OpenCV_INCLUDE_DIRS} $ENV{MKLROOT}/include)
 add_executable(${This} ${Source} ${Headers})
 add_sycl_to_target(TARGET ${This} SOURCES "main.cpp")
 
-add_compile_options(-g $<$<BOOL:${DEBUG}>)
 set(CXXFLAGS "-O3" "-fsycl-unnamed-lambda" "-fsycl" "-fopenmp" "-qmkl" "-DMKL_ILP64" ${EXTRA_FLAGS})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})
 target_link_directories(${This} PRIVATE $ENV{MKLROOT}/lib/intel64)

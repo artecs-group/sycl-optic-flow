@@ -3,9 +3,9 @@
 
 #include <cstdint>
 
-#define MAX_ITERATIONS 300
-#define PRESMOOTHING_SIGMA 0.8
-#define GRAD_IS_ZERO 1E-10
+constexpr size_t MAX_ITERATIONS{300};
+constexpr float PRESMOOTHING_SIGMA{0.8f}; 
+constexpr float GRAD_IS_ZERO{1E-10}; 
 
 class TV_L1 { 
 public:
@@ -27,7 +27,7 @@ private:
 	int *_nx, *_ny;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
-        *_p21, *_p22, *_grad, *_div_p1, *_div_p2;
+        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2;
 
     int _width;     // image width
     int _height;     // image height

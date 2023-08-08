@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
 #include <algorithm>
+#include <limits>
 
 #include "mkl.h"
 
@@ -73,6 +74,8 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	_grad   = new float[_width*_height];
 	_div_p1 = new float[_width*_height];
 	_div_p2 = new float[_width*_height];
+	_g1     = new float[_width*_height];
+	_g2     = new float[_width*_height];
 }
 
 TV_L1::~TV_L1() {
@@ -107,6 +110,8 @@ TV_L1::~TV_L1() {
 	delete[] _grad;
 	delete[] _div_p1;
 	delete[] _div_p2;
+	delete[] _g1;
+	delete[] _g2;
 }
 
 
@@ -176,7 +181,7 @@ void TV_L1::runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1) {
  **/
 void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny)
 {
-	const int size = nx * ny;
+	const size_t size = nx * ny;
 	const float l_t = _lambda * _theta;
 
 	centered_gradient(I1, _I1x, _I1y, nx, ny);
@@ -194,19 +199,17 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 		bicubic_interpolation_warp(_I1x, u1, u2, _I1wx, nx, ny, true);
 		bicubic_interpolation_warp(_I1y, u1, u2, _I1wy, nx, ny, true);
 
-#pragma omp parallel for
-		for (int i = 0; i < size; i++)
-		{
-			const float Ix2 = _I1wx[i] * _I1wx[i];
-			const float Iy2 = _I1wy[i] * _I1wy[i];
-
+		#pragma omp parallel for simd
+		for (int i = 0; i < size; i++) {
 			// store the |Grad(I1)|^2
-			_grad[i] = (Ix2 + Iy2);
-
-			// compute the constant part of the rho function
-			_rho_c[i] = (_I1w[i] - _I1wx[i] * u1[i]
-						- _I1wy[i] * u2[i] - I0[i]);
+			_grad[i] = (_I1wx[i] * _I1wx[i]) + (_I1wy[i] * _I1wy[i]);
 		}
+
+		#pragma omp parallel for simd
+		for (int i = 0; i < size; i++) {
+			// compute the constant part of the rho function
+			_rho_c[i] = (_I1w[i] - _I1wx[i] * u1[i] - _I1wy[i] * u2[i] - I0[i]);
+		}			
 
 		int n = 0;
 		float error = INFINITY;
@@ -215,37 +218,26 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			n++;
 			// estimate the values of the variable (v1, v2)
 			// (thresholding opterator TH)
-			#pragma omp parallel for
-			for (int i = 0; i < size; i++)
-			{
-				const float rho = _rho_c[i]
-					+ (_I1wx[i] * u1[i] + _I1wy[i] * u2[i]);
+			#pragma omp parallel for simd
+			for (int i = 0; i < size; i++) {
+				const float rho = _rho_c[i] + (_I1wx[i] * u1[i] + _I1wy[i] * u2[i]);
+				const float fi{-rho/_grad[i]};
+				const bool c1{rho >= -l_t * _grad[i]};
+				const bool c2{rho > l_t * _grad[i]};
+				const bool c3{_grad[i] < GRAD_IS_ZERO};
+				float d1{l_t * _I1wx[i]}; 
+				float d2{l_t * _I1wy[i]};
 
-				float d1, d2;
+				if(c1) {
+					d1 = fi * _I1wx[i];
+					d2 = fi * _I1wy[i];
 
-				if (rho < -l_t * _grad[i])
-				{
-					d1 = l_t * _I1wx[i];
-					d2 = l_t * _I1wy[i];
-				}
-				else
-				{
-					if (rho > l_t * _grad[i])
-					{
+					if(c2) {
 						d1 = -l_t * _I1wx[i];
 						d2 = -l_t * _I1wy[i];
 					}
-					else
-					{
-						if (_grad[i] < GRAD_IS_ZERO)
-							d1 = d2 = 0;
-						else
-						{
-							float fi = -rho/_grad[i];
-							d1 = fi * _I1wx[i];
-							d2 = fi * _I1wy[i];
-						}
-					}
+					else if(c3)
+						d1 = d2 = 0.0f;
 				}
 
 				_v1[i] = u1[i] + d1;
@@ -278,18 +270,32 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 
 			// estimate the values of the dual variable (p1, p2)
 			const float taut = _tau / _theta;
-			#pragma omp parallel for
-			for (int i = 0; i < size; i++)
-			{
-				const float g1   = std::hypot(_div_p1[i], _v1[i]);
-				const float g2   = std::hypot(_div_p2[i], _v2[i]);
-				const float ng1  = 1.0 + taut * g1;
-				const float ng2  = 1.0 + taut * g2;
+			#pragma omp parallel for simd
+			#pragma ivdep
+			for (int i = 0; i < size; i++) {
+				_g1[i] = 1.0f + taut * std::hypot(_div_p1[i], _v1[i]);
+				_g2[i] = 1.0f + taut * std::hypot(_div_p2[i], _v2[i]);
+			}
 
-				_p11[i] = (_p11[i] + taut * _div_p1[i]) / ng1;
-				_p12[i] = (_p12[i] + taut * _v1[i]) / ng1;
-				_p21[i] = (_p21[i] + taut * _div_p2[i]) / ng2;
-				_p22[i] = (_p22[i] + taut * _v2[i]) / ng2;
+			// #pragma omp parallel for simd
+			// for (int i = 0; i < size; i++) {
+			// 	_p11[i] = (taut * _div_p1[i] + _p11[i]) / _g1[i];
+			// 	_p12[i] = (taut * _v1[i] + _p12[i]) / _g1[i];
+			// 	_p21[i] = (taut * _div_p2[i] + _p21[i]) / _g2[i];
+			// 	_p22[i] = (taut * _v2[i] + _p22[i]) / _g2[i];
+			// }
+
+			cblas_saxpy(size, taut, _div_p1, 1, _p11, 1);
+			cblas_saxpy(size, taut, _v1, 1, _p12, 1);
+			cblas_saxpy(size, taut, _div_p2, 1, _p21, 1);
+			cblas_saxpy(size, taut, _v2, 1, _p22, 1);
+
+			#pragma omp parallel for simd
+			for (int i = 0; i < size; i++) {
+				_p11[i] = _p11[i] / _g1[i];
+				_p12[i] = _p12[i] / _g1[i];
+				_p21[i] = _p21[i] / _g2[i];
+				_p22[i] = _p22[i] / _g2[i];
 			}
 		}
 	}

@@ -37,23 +37,19 @@ void divergence(
 	       )
 {
 	// compute the divergence on the central body of the image
-#pragma omp parallel for schedule(dynamic)
-	for (int i = 1; i < ny-1; i++)
-	{
-		for(int j = 1; j < nx-1; j++)
-		{
+	#pragma omp parallel for schedule(dynamic)
+	for (int i = 1; i < ny-1; i++) {
+		#pragma omp simd
+		#pragma ivdep
+		for(int j = 1; j < nx-1; j++) {
 			const int p  = i * nx + j;
-			const int p1 = p - 1;
-			const int p2 = p - nx;
-
-			const float v1x = v1[p] - v1[p1];
-			const float v2y = v2[p] - v2[p2];
-
-			div[p] = v1x + v2y;
+			div[p]  = (v1[p] - v1[p-1]) + (v2[p] - v2[p-nx]);
 		}
 	}
 
 	// compute the divergence on the first and last rows
+	#pragma omp parallel for simd
+	#pragma ivdep
 	for (int j = 1; j < nx-1; j++)
 	{
 		const int p = (ny-1) * nx + j;
@@ -63,6 +59,7 @@ void divergence(
 	}
 
 	// compute the divergence on the first and last columns
+	#pragma omp parallel for
 	for (int i = 1; i < ny-1; i++)
 	{
 		const int p1 = i * nx;
@@ -95,9 +92,11 @@ void forward_gradient(
 		)
 {
 	// compute the gradient on the central body of the image
-#pragma omp parallel for schedule(dynamic)
+	#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < ny-1; i++)
 	{
+		#pragma omp simd
+		#pragma ivdep
 		for(int j = 0; j < nx-1; j++)
 		{
 			const int p  = i * nx + j;

@@ -135,8 +135,8 @@ int App::run() {
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
     // buffers required for the image proccesing
-    uint8_t* I0 = new uint8_t[width * height]{0};
-    uint8_t* I1 = new uint8_t[width * height]{0};
+    float* I0 = new float[width * height]{0};
+    float* I1 = new float[width * height]{0};
 
     TV_L1 tvl1 = TV_L1(width, height);
 
@@ -160,8 +160,10 @@ int App::run() {
         cv::cvtColor(auxFrame, m_frameGray2, COLOR_BGR2GRAY);
 
         if (m_process) {
-            memcpy(I0, m_frameGray.data, width*height * sizeof(uint8_t));
-            memcpy(I1, m_frameGray2.data, width*height * sizeof(uint8_t));
+            for (size_t i = 0; i < width*height; i++) {
+                I0[i] = static_cast<float>(m_frameGray.data[i]);
+                I1[i] = static_cast<float>(m_frameGray2.data[i]);
+            }
 
             tvl1.runDualTVL1Multiscale(I0, I1);
             flowToColor(width, height, tvl1.getU(), m_frameGray);

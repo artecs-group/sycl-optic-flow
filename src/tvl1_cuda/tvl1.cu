@@ -42,7 +42,7 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
 	_nscales = (N < nscales) ? N : nscales;
 
-	_u = new float[2 * _width*_height]{0};
+	_hostU = new float[2 * _width*_height];
 
 	// allocate memory for the pyramid structure
 	_I0s = new float*[_nscales];
@@ -115,33 +115,28 @@ TV_L1::~TV_L1() {
 }
 
 
-void TV_L1::convertToFloat(int size, const uint8_t *I0, const uint8_t *I1, float *_I0, float* _I1){
-	for (size_t i = 0; i < size; i++) {
-		_I0[i] = static_cast<float>(I0[i]);
-		_I1[i] = static_cast<float>(I1[i]);
-	}
-}
-
-
 /**
  * Function to compute the optical flow using multiple scales
  **/
-void TV_L1::runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1) {
+void TV_L1::runDualTVL1Multiscale(const uint8_t *I0, const uint8_t *I1) {
 	const int size = _width * _height;
 
-	_u1s[0] = _u;
-	_u2s[0] = _u + _width*_height;
-	_nx [0] = _width;
-	_ny [0] = _height;
+	// send images to the device 
+	cudaMemcpy(_I0s, I0, size * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(_I1s, I1, size * sizeof(float), cudaMemcpyHostToDevice);
 
-	convertToFloat(size, I0, I1, _I0s[0], _I1s[0]);
+	// setup initial values
+	cudaMemcpy(_nx, _width, sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(_ny, _height, sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemset(_u1s + (_nscales-1 * size), 0.0f, size * sizeof(float));
+	cudaMemset(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(float));
 
 	// normalize the images between 0 and 255
 	image_normalization(_I0s[0], _I1s[0], _I0s[0], _I1s[0], size);
 
 	// pre-smooth the original images
-	gaussian(_I0s[0], _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w);
-	gaussian(_I1s[0], _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w);
+	gaussian(_I0s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w);
+	gaussian(_I1s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w);
 
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
@@ -149,29 +144,29 @@ void TV_L1::runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1) {
 		zoom_size(_nx[s-1], _ny[s-1], &_nx[s], &_ny[s], _zfactor);
 
 		// zoom in the images to create the pyramidal structure
-		zoom_out(_I0s[s-1], _I0s[s], _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx);
-		zoom_out(_I1s[s-1], _I1s[s], _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx);
+		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx);
+		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx);
 	}
-
-	// initialize the flow at the coarsest scale
-	for (int i = 0; i < _nx[_nscales-1] * _ny[_nscales-1]; i++)
-		_u1s[_nscales-1][i] = _u2s[_nscales-1][i] = 0.0;
 
 	const float invZfactor{1 / _zfactor};
 	// pyramidal structure for computing the optical flow
 	for (int s = _nscales-1; s > 0; s--) {
 		// compute the optical flow at the current scale
-		dualTVL1(_I0s[s], _I1s[s], _u1s[s], _u2s[s], _nx[s], _ny[s]);
+		dualTVL1(_I0s + (s*size), _I1s + (s*size), _u1s + (s*size), _u2s + (s*size), _nx[s], _ny[s]);
 
 		// zoom the optical flow for the next finer scale
-		zoom_in(_u1s[s], _u1s[s-1], _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
-		zoom_in(_u2s[s], _u2s[s-1], _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
+		zoom_in(_u1s + (s*size), _u1s + (s-1)*size, _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
+		zoom_in(_u2s + (s*size), _u2s + (s-1)*size, _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
 
 		// scale the optical flow with the appropriate zoom factor
-		// cblas_sscal (_nx[s-1] * _ny[s-1], invZfactor, _u1s[s-1], 1);
-		// cblas_sscal (_nx[s-1] * _ny[s-1], invZfactor, _u2s[s-1], 1);
+		// cblas_sscal (_nx[s-1] * _ny[s-1], invZfactor, _u1s + (s-1)*size, 1);
+		// cblas_sscal (_nx[s-1] * _ny[s-1], invZfactor, _u2s + (s-1)*size, 1);
 	}
-	dualTVL1(_I0s[0], _I1s[0], _u1s[0], _u2s[0], _nx[0], _ny[0]);
+	dualTVL1(_I0s, _I1s, _u1s, _u2s, _nx[0], _ny[0]);
+
+	// write back to the host the result
+	cudaMemcpy(_hostU, _u1s, size * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(_hostU + size, _u2s, size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 /**

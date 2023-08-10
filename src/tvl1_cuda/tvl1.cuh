@@ -13,15 +13,14 @@ public:
         float theta=0.3, int nscales=100, float zfactor=0.5, int warps=5,
         float epsilon=0.01);
     ~TV_L1();
-    float* getU() { return _u; };
-    void runDualTVL1Multiscale(uint8_t *I0, uint8_t *I1);
+    float* getU() { return _hostU; };
+    void runDualTVL1Multiscale(const float *I0, const float *I1);
 
 private:
     void dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny);
     void image_normalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
-    void convertToFloat(int size, const uint8_t *I0, const uint8_t *I1, float *_I0, float* _I1);
 
-    float* _u;           // x, y component of the optical flow
+    float* _hostU;           // x, y component of the optical flow
 
 	float **_I0s, **_I1s, **_u1s, **_u2s;
 	int *_nx, *_ny;

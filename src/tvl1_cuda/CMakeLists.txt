@@ -31,6 +31,9 @@ if(DEBUG)
     set(EXTRA_FLAGS "-g")
 endif()
 
+set(THREADS_PER_BLOCK_DEFAULT 128 CACHE STRING "Default number of threads per block")
+set(THREADS_PER_BLOCK ${THREADS_PER_BLOCK_DEFAULT} CACHE STRING "Number of threads per block")
+
 find_package(CUDAToolkit REQUIRED)
 find_library(CUBLAS_LIBRARY cublas)
 find_package(OpenCV REQUIRED)
@@ -38,6 +41,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source} ${Headers})
 
 set(CXXFLAGS "-O3" "-lcublas" ${EXTRA_FLAGS})
+add_compile_definitions(THREADS_PER_BLOCK=${THREADS_PER_BLOCK})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})
 target_link_directories(${This} PRIVATE)
 target_link_libraries(${This} ${OpenCV_LIBS} ${CUBLAS_LIBRARY} ${CXXFLAGS})

@@ -277,6 +277,16 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 }
 
 
+__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size) {
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+	
+	if(i < size) {
+		I0n[i] = 255.0 * (I0[i] - min) / den;
+		I1n[i] = 255.0 * (I1[i] - min) / den;
+	}
+}
+
+
 /**
  *
  * Function to normalize the images between 0 and 255
@@ -311,8 +321,6 @@ void TV_L1::image_normalization(
 		return;
 
 	// normalize both images
-	for (int i = 0; i < size; i++) {
-		I0n[i] = 255.0 * (I0[i] - min) / den;
-		I1n[i] = 255.0 * (I1[i] - min) / den;
-	}
+	const int blocks = (size + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+	normKernel<<<blocks, THREADS_PER_BLOCK>>>(I0, I1, I0n, I1n, min, den, size);
 }

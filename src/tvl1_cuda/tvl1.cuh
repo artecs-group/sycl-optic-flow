@@ -42,4 +42,6 @@ private:
     float _epsilon; // tolerance for numerical convergence
 };
 
+__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size);
+
 #endif

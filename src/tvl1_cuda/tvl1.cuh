@@ -2,6 +2,7 @@
 #define DUAL_TVL1_OPTIC_FLOW_H
 
 #include <cstdint>
+#include <cublas_v2.h>
 
 constexpr size_t MAX_ITERATIONS{300};
 constexpr float PRESMOOTHING_SIGMA{0.8f}; 
@@ -13,16 +14,18 @@ public:
         float theta=0.3, int nscales=100, float zfactor=0.5, int warps=5,
         float epsilon=0.01);
     ~TV_L1();
-    float* getU() { return _hostU; };
+    const float* getU() { return _hostU; };
     void runDualTVL1Multiscale(const float *I0, const float *I1);
 
 private:
     void dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny);
     void image_normalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
 
+    cublasHandle_t _handle;
+
     float* _hostU;           // x, y component of the optical flow
 
-	float **_I0s, **_I1s, **_u1s, **_u2s;
+	float *_I0s, *_I1s, *_u1s, *_u2s;
 	int *_nx, *_ny;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 

@@ -24,7 +24,8 @@ void zoom_out(
 	const int ny,      // image height
 	const float factor, // zoom factor between 0 and 1
 	float* Is,           // temporary working image
-	float* gaussBuffer   // Gaussian buffer
+	float* gaussBuffer,   // Gaussian buffer
+	cublasHandle_t* handle
 )
 {
 	for(int i = 0; i < nx * ny; i++)
@@ -38,7 +39,7 @@ void zoom_out(
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
-	gaussian(Is, nx, ny, sigma, gaussBuffer);
+	gaussian(Is, nx, ny, sigma, gaussBuffer, handle);
 
 	// re-sample the image using bicubic interpolation
 	#pragma omp parallel for
@@ -82,4 +83,24 @@ void zoom_in(
 		float g = bicubic_interpolation_at(I, j2, i2, nx, ny, false);
 		Iout[i1 * nxx + j1] = g;
 	}
+}
+
+
+/**
+  *
+  * Compute the size of a zoomed image from the zoom factor
+  *
+**/
+void zoom_size(
+	int nx,      // width of the orignal image
+	int ny,      // height of the orignal image
+	int *nxx,    // width of the zoomed image
+	int *nyy,    // height of the zoomed image
+	float factor // zoom factor between 0 and 1
+)
+{
+	//compute the new size corresponding to factor
+	//we add 0.5 for rounding off to the closest number
+	*nxx = (int)((float) nx * factor + 0.5);
+	*nyy = (int)((float) ny * factor + 0.5);
 }

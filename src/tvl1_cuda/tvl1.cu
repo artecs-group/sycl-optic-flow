@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <limits>
 
-#include <cublas_v2.h>
-
 #include "tvl1.cuh"
 #include "mask/mask.cuh"
 #include "bicubic_interpolation/bicubic_interpolation.cuh"
@@ -44,81 +42,70 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 
 	_hostU = new float[2 * _width*_height];
 
+	cublasCreate(&_handle);
+
 	// allocate memory for the pyramid structure
-	_I0s = new float*[_nscales];
-	_I1s = new float*[_nscales];
-	_u1s = new float*[_nscales];
-	_u2s = new float*[_nscales];
-	_nx  = new int[_nscales];
-	_ny  = new int[_nscales];
+	cudaMalloc(&_I0s, _nscales * _width * _height * sizeof(float));
+	cudaMalloc(&_I1s, _nscales * _width * _height * sizeof(float));
+	cudaMalloc(&_u1s, _nscales * _width * _height * sizeof(float));
+	cudaMalloc(&_u2s, _nscales * _width * _height * sizeof(float));
+	cudaMalloc(&_nx, _nscales * sizeof(int));
+	cudaMalloc(&_ny, _nscales * sizeof(int));
 
-	for (int i = 0; i < _nscales; i++) {
-		_I0s[i] = new float[_width*_height];
-		_I1s[i] = new float[_width*_height];
-		_u1s[i] = new float[_width*_height];
-		_u2s[i] = new float[_width*_height];
-	}
-
-	_I1x    = new float[_width*_height];
-	_I1y    = new float[_width*_height];
-	_I1w    = new float[_width*_height];
-	_I1wx   = new float[_width*_height];
-	_I1wy   = new float[_width*_height];
-	_rho_c  = new float[_width*_height];
-	_v1     = new float[_width*_height];
-	_v2     = new float[_width*_height];
-	_p11    = new float[_width*_height];
-	_p12    = new float[_width*_height];
-	_p21    = new float[_width*_height];
-	_p22    = new float[_width*_height];
-	_grad   = new float[_width*_height];
-	_div_p1 = new float[_width*_height];
-	_div_p2 = new float[_width*_height];
-	_g1     = new float[_width*_height];
-	_g2     = new float[_width*_height];
+	cudaMalloc(&_I1x, _width*_height * sizeof(float));
+	cudaMalloc(&_I1y, _width*_height * sizeof(float));
+	cudaMalloc(&_I1w, _width*_height * sizeof(float));
+	cudaMalloc(&_I1wx, _width*_height * sizeof(float));
+	cudaMalloc(&_I1wy, _width*_height * sizeof(float));
+	cudaMalloc(&_rho_c, _width*_height * sizeof(float));
+	cudaMalloc(&_v1, _width*_height * sizeof(float));
+	cudaMalloc(&_v2, _width*_height * sizeof(float));
+	cudaMalloc(&_p11, _width*_height * sizeof(float));
+	cudaMalloc(&_p12, _width*_height * sizeof(float));
+	cudaMalloc(&_p21, _width*_height * sizeof(float));
+	cudaMalloc(&_p22, _width*_height * sizeof(float));
+	cudaMalloc(&_grad, _width*_height * sizeof(float));
+	cudaMalloc(&_div_p1, _width*_height * sizeof(float));
+	cudaMalloc(&_div_p2, _width*_height * sizeof(float));
+	cudaMalloc(&_g1, _width*_height * sizeof(float));
+	cudaMalloc(&_g2, _width*_height * sizeof(float));
 }
 
 TV_L1::~TV_L1() {
-	delete[] _u;
-	
-	for (int i = 0; i < _nscales; i++) {
-		delete[] _I0s[i];
-		delete[] _I1s[i];
-		delete[] _u1s[i];
-		delete[] _u2s[i];
-	}
+	delete[] _hostU;
+	cublasDestroy(_handle);
 
-	delete[] _I0s;
-	delete[] _I1s;
-	delete[] _u1s;
-	delete[] _u2s;
-	delete[] _nx;
-	delete[] _ny;
+	cudaFree(_I0s);
+	cudaFree(_I1s);
+	cudaFree(_u1s);
+	cudaFree(_u2s);
+	cudaFree(_nx);
+	cudaFree(_ny);
 
-	delete[] _I1x;
-	delete[] _I1y;
-	delete[] _I1w;
-	delete[] _I1wx;
-	delete[] _I1wy;
-	delete[] _rho_c;
-	delete[] _v1;
-	delete[] _v2;
-	delete[] _p11;
-	delete[] _p12;
-	delete[] _p21;
-	delete[] _p22;
-	delete[] _grad;
-	delete[] _div_p1;
-	delete[] _div_p2;
-	delete[] _g1;
-	delete[] _g2;
+	cudaFree(_I1x);
+	cudaFree(_I1y);
+	cudaFree(_I1w);
+	cudaFree(_I1wx);
+	cudaFree(_I1wy);
+	cudaFree(_rho_c);
+	cudaFree(_v1);
+	cudaFree(_v2);
+	cudaFree(_p11);
+	cudaFree(_p12);
+	cudaFree(_p21);
+	cudaFree(_p22);
+	cudaFree(_grad);
+	cudaFree(_div_p1);
+	cudaFree(_div_p2);
+	cudaFree(_g1);
+	cudaFree(_g2);
 }
 
 
 /**
  * Function to compute the optical flow using multiple scales
  **/
-void TV_L1::runDualTVL1Multiscale(const uint8_t *I0, const uint8_t *I1) {
+void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 	const int size = _width * _height;
 
 	// send images to the device 
@@ -126,17 +113,17 @@ void TV_L1::runDualTVL1Multiscale(const uint8_t *I0, const uint8_t *I1) {
 	cudaMemcpy(_I1s, I1, size * sizeof(float), cudaMemcpyHostToDevice);
 
 	// setup initial values
-	cudaMemcpy(_nx, _width, sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(_ny, _height, sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(_nx, &_width, sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(_ny, &_height, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemset(_u1s + (_nscales-1 * size), 0.0f, size * sizeof(float));
 	cudaMemset(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(float));
 
 	// normalize the images between 0 and 255
-	image_normalization(_I0s[0], _I1s[0], _I0s[0], _I1s[0], size);
+	image_normalization(_I0s, _I1s, _I0s, _I1s, size);
 
 	// pre-smooth the original images
-	gaussian(_I0s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w);
-	gaussian(_I1s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w);
+	gaussian(_I0s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w, &_handle);
+	gaussian(_I1s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w, &_handle);
 
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
@@ -144,8 +131,8 @@ void TV_L1::runDualTVL1Multiscale(const uint8_t *I0, const uint8_t *I1) {
 		zoom_size(_nx[s-1], _ny[s-1], &_nx[s], &_ny[s], _zfactor);
 
 		// zoom in the images to create the pyramidal structure
-		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx);
-		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx);
+		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx, &_handle);
+		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx, &_handle);
 	}
 
 	const float invZfactor{1 / _zfactor};
@@ -159,10 +146,11 @@ void TV_L1::runDualTVL1Multiscale(const uint8_t *I0, const uint8_t *I1) {
 		zoom_in(_u2s + (s*size), _u2s + (s-1)*size, _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
 
 		// scale the optical flow with the appropriate zoom factor
-		// cblas_sscal (_nx[s-1] * _ny[s-1], invZfactor, _u1s + (s-1)*size, 1);
-		// cblas_sscal (_nx[s-1] * _ny[s-1], invZfactor, _u2s + (s-1)*size, 1);
+		cublasSscal(_handle, _nx[s-1] * _ny[s-1], &invZfactor, _u1s + (s-1)*size, 1);
+		cublasSscal(_handle, _nx[s-1] * _ny[s-1], &invZfactor, _u2s + (s-1)*size, 1);
 	}
 	dualTVL1(_I0s, _I1s, _u1s, _u2s, _nx[0], _ny[0]);
+	cudaDeviceSynchronize();
 
 	// write back to the host the result
 	cudaMemcpy(_hostU, _u1s, size * sizeof(float), cudaMemcpyDeviceToHost);
@@ -272,10 +260,10 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 				_g2[i] = 1.0f + taut * std::hypot(_div_p2[i], _v2[i]);
 			}
 
-			// cblas_saxpy(size, taut, _div_p1, 1, _p11, 1);
-			// cblas_saxpy(size, taut, _v1, 1, _p12, 1);
-			// cblas_saxpy(size, taut, _div_p2, 1, _p21, 1);
-			// cblas_saxpy(size, taut, _v2, 1, _p22, 1);
+			cublasSaxpy(_handle, size, &taut, _div_p1, 1, _p11, 1);
+			cublasSaxpy(_handle, size, &taut, _v1, 1, _p12, 1);
+			cublasSaxpy(_handle, size, &taut, _div_p2, 1, _p21, 1);
+			cublasSaxpy(_handle, size, &taut, _v2, 1, _p22, 1);
 
 			#pragma omp parallel for simd
 			for (int i = 0; i < size; i++) {
@@ -303,15 +291,20 @@ void TV_L1::image_normalization(
 )
 {
 	// obtain the max and min of each image
-	size_t max0, max1, min0, min1;
-	// size_t max0 = cblas_isamax(size, I0, 1);
-	// size_t max1 = cblas_isamax(size, I1, 1);
-	// size_t min0 = cblas_isamin(size, I0, 1);
-	// size_t min1 = cblas_isamin(size, I1, 1);	
+	int iMax0, iMax1, iMin0, iMin1;
+	cublasIsamax(_handle, size, I0, 1, &iMax0);
+	cublasIsamax(_handle, size, I1, 1, &iMax1);
+	cublasIsamin(_handle, size, I0, 1, &iMin0);
+	cublasIsamin(_handle, size, I1, 1, &iMin1);
 
 	// obtain the max and min of both images
-	const float max = std::max(I0[max0], I1[max1]);
-	const float min = std::min(I0[min0], I1[min1]);
+	int max0, max1, min0, min1;
+	cudaMemcpy(&max0, I0 + iMax0, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&max1, I1 + iMax1, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&min0, I0 + iMin0, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&min1, I1 + iMin1, sizeof(float), cudaMemcpyDeviceToHost);
+	const float max = std::max(max0, max1);
+	const float min = std::min(min0, min1);
 	const float den = max - min;
 
 	if(den <= 0)

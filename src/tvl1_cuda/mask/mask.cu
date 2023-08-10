@@ -9,8 +9,6 @@
 #include <iostream>
 #include <cmath>
 
-#include <cublas_v2.h>
-
 #include "mask.cuh"
 
 /**
@@ -206,7 +204,8 @@ void gaussian(
 	const int xdim,       // image width
 	const int ydim,       // image height
 	const double sigma,    // Gaussian sigma
-	float* buffer		   // Temporary buffer
+	float* buffer,		   // Temporary buffer
+	cublasHandle_t* handle
 )
 {
 	const double den  = 2*sigma*sigma;
@@ -221,15 +220,16 @@ void gaussian(
 	}
 
 	// compute the coefficients of the 1D convolution kernel
-	double B[size];
+	float B[size];
 	for(int i = 0; i < size; i++)
 		B[i] = 1 / sPi * std::exp(-i * i / den);
 
 	// normalize the 1D convolution kernel
-	double norm;
-	// double norm = cblas_dasum (size, B, 1);
-	norm = norm * 2 - B[0];
-	// cblas_dscal (size, 1/norm, B, 1);
+	float norm, hB;
+	cublasSasum(*handle, size, B, 1, &norm);
+	cudaMemcpy(&hB, B, sizeof(float), cudaMemcpyDeviceToHost);
+	norm = 1 / (norm * 2 - hB);
+	cublasSscal(*handle, size, &norm, B, 1);
 
 	// convolution of each line of the input image
 	for (int k = 0; k < ydim; k++)

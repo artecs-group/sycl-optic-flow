@@ -69,6 +69,11 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	cudaMalloc(&_div_p2, _width*_height * sizeof(float));
 	cudaMalloc(&_g1, _width*_height * sizeof(float));
 	cudaMalloc(&_g2, _width*_height * sizeof(float));
+
+	float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(_zfactor*_zfactor) - 1.0);
+	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
+	const int bSize = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
+	cudaMalloc(&_B,  bSize * sizeof(float));
 }
 
 TV_L1::~TV_L1() {
@@ -99,6 +104,7 @@ TV_L1::~TV_L1() {
 	cudaFree(_div_p2);
 	cudaFree(_g1);
 	cudaFree(_g2);
+	cudaFree(_B);
 }
 
 
@@ -122,17 +128,17 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 	image_normalization(_I0s, _I1s, _I0s, _I1s, size);
 
 	// pre-smooth the original images
-	gaussian(_I0s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w, &_handle);
-	gaussian(_I1s, _nx[0], _ny[0], PRESMOOTHING_SIGMA, _I1w, &_handle);
+	gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
+	gaussian(_I1s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
 
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
 	{
-		zoom_size(_nx[s-1], _ny[s-1], &_nx[s], &_ny[s], _zfactor);
+		zoom_size<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, _zfactor);
 
 		// zoom in the images to create the pyramidal structure
-		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx, &_handle);
-		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _nx[s-1], _ny[s-1], _zfactor, _I1w, _I1wx, &_handle);
+		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _zfactor, _I1w, &_handle);
+		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _zfactor, _I1w, &_handle);
 	}
 
 	const float invZfactor{1 / _zfactor};

@@ -194,35 +194,106 @@ void centered_gradient(
 }
 
 
+__global__ void convolution1D(float* B, int size, float sPi, float den) {
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if(i < size)
+		B[i] = 1 / sPi * std::exp(-i * i / den);
+}
+
+
+__global__ void lineConvolution(const float *I, float *output, const float *B, int xdim, int ydim, int size, int bdx) {
+    int k = blockIdx.x;  // Each block processes a different line (k)
+    int i = threadIdx.x + size;  // Current index within the line (including padding)
+    int tid = threadIdx.x;
+
+    __shared__ float buffer[THREADS_PER_BLOCK + 2 * MAX_SHARED_SIZE];
+
+    // Load necessary data into shared memory
+    if (tid < size) {
+        buffer[tid] = I[k * xdim + size - tid];
+        buffer[tid + THREADS_PER_BLOCK + size] = I[k * xdim + xdim - tid - 1];
+    }
+
+    buffer[tid + size] = I[k * xdim + tid];
+    buffer[tid + THREADS_PER_BLOCK] = I[k * xdim + tid + THREADS_PER_BLOCK];
+
+    __syncthreads();
+
+    if (i >= size && i < bdx - size) {
+        float sum = B[0] * buffer[tid + size];
+
+        for (int j = 1; j < size; j++) {
+            sum += B[j] * (buffer[tid + size - j] + buffer[tid + size + j]);
+        }
+
+        output[k * xdim + i - size] = sum;
+    }
+}
+
+
+__global__ void columnConvolution(const float* I, float* output, const float* B, int xdim, int ydim, int size, int bdy) {
+    int k = blockIdx.x;  // Each block processes a different column (k)
+    int i = threadIdx.x + size;  // Current index within the column (including padding)
+    int tid = threadIdx.x;
+
+    __shared__ float buffer[THREADS_PER_BLOCK + 2 * MAX_SHARED_SIZE];
+
+    // Load necessary data into shared memory
+    if (tid < size) {
+        buffer[tid] = I[(tid - size) * xdim + k];
+        buffer[tid + THREADS_PER_BLOCK + size] = I[(bdy - tid - 1) * xdim + k];
+    }
+
+    buffer[tid + size] = I[tid * xdim + k];
+    buffer[tid + THREADS_PER_BLOCK] = I[(tid + THREADS_PER_BLOCK) * xdim + k];
+
+    __syncthreads();
+
+    if (i >= size && i < bdy - size) {
+        float sum = B[0] * buffer[tid + size];
+
+        for (int j = 1; j < size; j++) {
+            sum += B[j] * (buffer[tid + size - j] + buffer[tid + size + j]);
+        }
+
+        output[(i - size) * xdim + k] = sum;
+    }
+}
+
+
+
 /**
  *
  * In-place Gaussian smoothing of an image
  *
  */
 void gaussian(
-	float *I,             // input/output image
-	const int xdim,       // image width
-	const int ydim,       // image height
+	float* I,             // input/output image
+	float* B,			  // coefficients of the 1D convolution
+	const int* xdim,       // image width
+	const int* ydim,       // image height
 	const double sigma,    // Gaussian sigma
-	float* buffer,		   // Temporary buffer
 	cublasHandle_t* handle
 )
 {
-	const double den  = 2*sigma*sigma;
-	const double sPi = sigma * std::sqrt(M_PI * 2);
-	const int   size = (int) (DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma) + 1 ;
-	const int   bdx  = xdim + size;
-	const int   bdy  = ydim + size;
+	const float den  = 2*sigma*sigma;
+	const float sPi = sigma * std::sqrt(M_PI * 2);
+	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
+	int bdx, bdy, hXdim, hYdim;
+	cudaMemcpy(&hXdim, xdim, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&hYdim, ydim, sizeof(int), cudaMemcpyDeviceToHost);
+	bdx = hXdim + size;
+	bdy = hYdim + size;
 
-	if (size > xdim) {
-		std::cerr << "GaussianSmooth: sigma too large." << std::endl;
+	if (size > hXdim) {
+		std::cerr << "Gaussian smooth: sigma too large." << std::endl;
 		throw;
 	}
 
+	int blocks = (size + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
 	// compute the coefficients of the 1D convolution kernel
-	float B[size];
-	for(int i = 0; i < size; i++)
-		B[i] = 1 / sPi * std::exp(-i * i / den);
+	convolution1D<<<blocks, THREADS_PER_BLOCK>>>(B, size, sPi, den);
 
 	// normalize the 1D convolution kernel
 	float norm, hB;
@@ -232,44 +303,8 @@ void gaussian(
 	cublasSscal(*handle, size, &norm, B, 1);
 
 	// convolution of each line of the input image
-	for (int k = 0; k < ydim; k++)
-	{
-		int i, j;
-		for (i = size; i < bdx; i++)
-			buffer[i] = I[k * xdim + i - size];
-
-		for(i = 0, j = bdx; i < size; i++, j++) {
-			buffer[i] = I[k * xdim + size-i];
-			buffer[j] = I[k * xdim + xdim-i-1];
-		}
-
-		for (i = size; i < bdx; i++)
-		{
-			double sum = B[0] * buffer[i];
-			for (j = 1; j < size; j++ )
-				sum += B[j] * ( buffer[i-j] + buffer[i+j] );
-			I[k * xdim + i - size] = sum;
-		}
-	}
+    lineConvolution<<<hYdim, THREADS_PER_BLOCK>>>(I, I, B, hXdim, hYdim, size, bdx);
 
 	// convolution of each column of the input image
-	for (int k = 0; k < xdim; k++)
-	{
-		int i, j;
-		for (i = size; i < bdy; i++)
-			buffer[i] = I[(i - size) * xdim + k];
-
-		for (i = 0, j = bdy; i < size; i++, j++) {
-			buffer[i] = I[(size-i) * xdim + k];
-			buffer[j] = I[(ydim-i-1) * xdim + k];
-		}
-
-		for (i = size; i < bdy; i++)
-		{
-			double sum = B[0] * buffer[i];
-			for (j = 1; j < size; j++ )
-				sum += B[j] * (buffer[i-j] + buffer[i+j]);
-			I[(i - size) * xdim + k] = sum;
-		}
-	}
+    columnConvolution<<<hXdim, THREADS_PER_BLOCK>>>(I, I, B, hXdim, hYdim, size, bdy);
 }

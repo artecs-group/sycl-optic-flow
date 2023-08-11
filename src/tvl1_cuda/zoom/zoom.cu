@@ -20,26 +20,25 @@
 void zoom_out(
 	const float *I,    // input image
 	float *Iout,       // output image
-	const int nx,      // image width
-	const int ny,      // image height
+	float* B,
+	const int* nx,      // image width
+	const int* ny,      // image height
 	const float factor, // zoom factor between 0 and 1
 	float* Is,           // temporary working image
-	float* gaussBuffer,   // Gaussian buffer
 	cublasHandle_t* handle
 )
 {
-	for(int i = 0; i < nx * ny; i++)
-		Is[i] = I[i];
+	cudaMemcpy(Is, I, nx*ny*sizeof(float), cudaMemcpyDeviceToDevice);
 
 	// compute the size of the zoomed image
 	int nxx, nyy;
-	zoom_size(nx, ny, &nxx, &nyy, factor);
+	zoom_size<<<1,1>>>(nx, ny, &nxx, &nyy, factor);
 
 	// compute the Gaussian sigma for smoothing
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
-	gaussian(Is, nx, ny, sigma, gaussBuffer, handle);
+	gaussian(Is, B, nx, ny, sigma, handle);
 
 	// re-sample the image using bicubic interpolation
 	#pragma omp parallel for
@@ -91,16 +90,16 @@ void zoom_in(
   * Compute the size of a zoomed image from the zoom factor
   *
 **/
-void zoom_size(
-	int nx,      // width of the orignal image
-	int ny,      // height of the orignal image
-	int *nxx,    // width of the zoomed image
-	int *nyy,    // height of the zoomed image
+__global__ void zoom_size(
+	const int* nx,      // width of the orignal image
+	const int* ny,      // height of the orignal image
+	int* nxx,    // width of the zoomed image
+	int* nyy,    // height of the zoomed image
 	float factor // zoom factor between 0 and 1
 )
 {
 	//compute the new size corresponding to factor
 	//we add 0.5 for rounding off to the closest number
-	*nxx = (int)((float) nx * factor + 0.5);
-	*nyy = (int)((float) ny * factor + 0.5);
+	*nxx = (int)((float) *nx * factor + 0.5);
+	*nyy = (int)((float) *ny * factor + 0.5);
 }

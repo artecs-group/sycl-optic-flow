@@ -29,7 +29,7 @@ private:
 	int *_nx, *_ny;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
-        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2;
+        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2, *_B;
 
     int _width;     // image width
     int _height;     // image height

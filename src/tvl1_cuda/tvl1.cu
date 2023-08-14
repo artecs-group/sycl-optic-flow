@@ -41,6 +41,8 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	_nscales = (N < nscales) ? N : nscales;
 
 	_hostU = new float[2 * _width*_height];
+	_hNx   = new int[_nscales];
+	_hNy   = new int[_nscales];
 
 	cublasCreate(&_handle);
 
@@ -51,6 +53,7 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	cudaMalloc(&_u2s, _nscales * _width * _height * sizeof(float));
 	cudaMalloc(&_nx, _nscales * sizeof(int));
 	cudaMalloc(&_ny, _nscales * sizeof(int));
+	cudaMalloc(&_nxy, 2 * sizeof(int));
 
 	cudaMalloc(&_I1x, _width*_height * sizeof(float));
 	cudaMalloc(&_I1y, _width*_height * sizeof(float));
@@ -78,6 +81,8 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 
 TV_L1::~TV_L1() {
 	delete[] _hostU;
+	delete[] _hNx;
+	delete[] _hNy;
 	cublasDestroy(_handle);
 
 	cudaFree(_I0s);
@@ -86,6 +91,7 @@ TV_L1::~TV_L1() {
 	cudaFree(_u2s);
 	cudaFree(_nx);
 	cudaFree(_ny);
+	cudaFree(_nxy);
 
 	cudaFree(_I1x);
 	cudaFree(_I1y);
@@ -137,25 +143,28 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 		zoom_size<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, _zfactor);
 
 		// zoom in the images to create the pyramidal structure
-		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _zfactor, _I1w, &_handle);
-		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _zfactor, _I1w, &_handle);
+		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
 	}
+	cudaDeviceSynchronize();
+	cudaMemcpy(_hNx, _nx, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(_hNy, _ny, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
 
 	const float invZfactor{1 / _zfactor};
 	// pyramidal structure for computing the optical flow
 	for (int s = _nscales-1; s > 0; s--) {
 		// compute the optical flow at the current scale
-		dualTVL1(_I0s + (s*size), _I1s + (s*size), _u1s + (s*size), _u2s + (s*size), _nx[s], _ny[s]);
+		dualTVL1(_I0s + (s*size), _I1s + (s*size), _u1s + (s*size), _u2s + (s*size), _hNx[s], _hNy[s]);
 
 		// zoom the optical flow for the next finer scale
-		zoom_in(_u1s + (s*size), _u1s + (s-1)*size, _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
-		zoom_in(_u2s + (s*size), _u2s + (s-1)*size, _nx[s], _ny[s], _nx[s-1], _ny[s-1]);
+		zoom_in(_u1s + (s*size), _u1s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
+		zoom_in(_u2s + (s*size), _u2s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
 
 		// scale the optical flow with the appropriate zoom factor
-		cublasSscal(_handle, _nx[s-1] * _ny[s-1], &invZfactor, _u1s + (s-1)*size, 1);
-		cublasSscal(_handle, _nx[s-1] * _ny[s-1], &invZfactor, _u2s + (s-1)*size, 1);
+		cublasSscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u1s + (s-1)*size, 1);
+		cublasSscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u2s + (s-1)*size, 1);
 	}
-	dualTVL1(_I0s, _I1s, _u1s, _u2s, _nx[0], _ny[0]);
+	dualTVL1(_I0s, _I1s, _u1s, _u2s, _hNx[0], _hNy[0]);
 	cudaDeviceSynchronize();
 
 	// write back to the host the result
@@ -327,6 +336,7 @@ void TV_L1::image_normalization(
 		return;
 
 	// normalize both images
-	const int blocks = (size + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-	normKernel<<<blocks, THREADS_PER_BLOCK>>>(I0, I1, I0n, I1n, min, den, size);
+	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	const int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
+	normKernel<<<blocks, threads>>>(I0, I1, I0n, I1n, min, den, size);
 }

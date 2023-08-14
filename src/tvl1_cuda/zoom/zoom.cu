@@ -12,6 +12,32 @@
 #include "../mask/mask.cuh"
 #include "../bicubic_interpolation/bicubic_interpolation.cuh"
 
+
+__global__ void bicubicResample(const float* Is, float *Iout, const int* nxx, const int* nyy, 
+	const int* nx, const int* ny, float factor){
+    const int j = blockIdx.x * blockDim.x + threadIdx.x;
+    const int i = blockIdx.y * blockDim.y + threadIdx.y;
+	const float ii = (float)i / factor;
+	const float jj = (float)j / factor;
+
+    if (i < *nyy && j < *nxx) {
+        Iout[i * *nxx + j] = bicubic_interpolation_at(Is, jj, ii, *nx, *ny, false);
+    }
+}
+
+__global__ void bicubicResample2(const float* Is, float *Iout, const int* nxx, const int* nyy, 
+	const int* nx, const int* ny){
+    const int j = blockIdx.x * blockDim.x + threadIdx.x;
+    const int i = blockIdx.y * blockDim.y + threadIdx.y;
+	const float ii = (float)i / ((float)*nyy / *ny);
+	const float jj = (float)j / ((float)*nxx / *nx);
+
+    if (i < *nyy && j < *nxx) {
+        Iout[i * *nxx + j] = bicubic_interpolation_at(Is, jj, ii, *nx, *ny, false);
+    }
+}
+
+
 /**
   *
   * Downsample an image
@@ -23,16 +49,20 @@ void zoom_out(
 	float* B,
 	const int* nx,      // image width
 	const int* ny,      // image height
+	int* nxx,
+	int* nyy,
 	const float factor, // zoom factor between 0 and 1
 	float* Is,           // temporary working image
 	cublasHandle_t* handle
 )
 {
-	cudaMemcpy(Is, I, nx*ny*sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpy(Is, I, *nx * *ny * sizeof(float), cudaMemcpyDeviceToDevice);
 
 	// compute the size of the zoomed image
-	int nxx, nyy;
-	zoom_size<<<1,1>>>(nx, ny, &nxx, &nyy, factor);
+	zoom_size<<<1,1>>>(nx, ny, nxx, nyy, factor);
+	int sx, sy;
+	cudaMemcpy(&sx, nxx, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&sy, nyy, sizeof(int), cudaMemcpyDeviceToHost);
 
 	// compute the Gaussian sigma for smoothing
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
@@ -41,15 +71,10 @@ void zoom_out(
 	gaussian(Is, B, nx, ny, sigma, handle);
 
 	// re-sample the image using bicubic interpolation
-	#pragma omp parallel for
-	for (int i1 = 0; i1 < nyy; i1++)
-		for (int j1 = 0; j1 < nxx; j1++) {
-			const float i2  = (float) i1 / factor;
-			const float j2  = (float) j1 / factor;
-
-			float g = bicubic_interpolation_at(Is, j2, i2, nx, ny, false);
-			Iout[i1 * nxx + j1] = g;
-		}
+	const size_t TH2{THREADS_PER_BLOCK/8};
+	dim3 blocks(sx / TH2 + (sx % TH2 == 0 ? 0:1), sy / TH2 + (sy % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? sx:TH2, blocks.y == 1 ? sy:TH2);
+	bicubicResample<<<blocks, threads>>>(Is, Iout, nxx, nyy, nx, ny, factor);
 }
 
 
@@ -61,27 +86,21 @@ void zoom_out(
 void zoom_in(
 	const float *I, // input image
 	float *Iout,    // output image
-	int nx,         // width of the original image
-	int ny,         // height of the original image
-	int nxx,        // width of the zoomed image
-	int nyy         // height of the zoomed image
+	const int* nx,         // width of the original image
+	const int* ny,         // height of the original image
+	const int* nxx,        // width of the zoomed image
+	const int* nyy         // height of the zoomed image
 )
 {
-	// compute the zoom factor
-	const float factorx = ((float)nxx / nx);
-	const float factory = ((float)nyy / ny);
+	int sx, sy;
+	cudaMemcpy(&sx, nxx, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&sy, nyy, sizeof(int), cudaMemcpyDeviceToHost);
 
-	// re-sample the image using bicubic interpolation
-	#pragma omp parallel for
-	for (int i1 = 0; i1 < nyy; i1++)
-	for (int j1 = 0; j1 < nxx; j1++)
-	{
-		float i2 =  (float) i1 / factory;
-		float j2 =  (float) j1 / factorx;
-
-		float g = bicubic_interpolation_at(I, j2, i2, nx, ny, false);
-		Iout[i1 * nxx + j1] = g;
-	}
+	// re-sample the image using bicubic interpolation	
+	const size_t TH2{THREADS_PER_BLOCK/8};
+	dim3 blocks(sx / TH2 + (sx % TH2 == 0 ? 0:1), sy / TH2 + (sy % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? sx:TH2, blocks.y == 1 ? sy:TH2);
+	bicubicResample2<<<blocks, threads>>>(I, Iout, nxx, nyy, nx, ny);
 }
 
 

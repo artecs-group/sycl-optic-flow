@@ -128,6 +128,57 @@ void forward_gradient(
 	fy[ny * nx - 1] = 0;
 }
 
+//// i = 0, 1, 2 ; + 2 = 2, 3, 4
+//// j = 0, 1, 2 ; + 2 = 2, 3, 4
+
+__global__ void bodyGradient(const float* input, float* dx, float* dy, int nx, int ny){
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + nx + 1;
+	if(i < (nx-1)*(ny-1)){
+		dx[i] = 0.5*(input[i+1] - input[i-1]);
+		dy[i] = 0.5*(input[i+nx] - input[i-nx]);
+	}
+}
+
+
+__global__ void edgeRowsGradient(const float* input, float* dx, float* dy, int nx, int ny){
+	const int j = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
+	const int k = (ny - 1) * nx + j;
+	if(j < nx-1) {
+		dx[j] = 0.5*(input[j+1] - input[j-1]);
+		dy[j] = 0.5*(input[j+nx] - input[j]);
+		dx[k] = 0.5*(input[k+1] - input[k-1]);
+		dy[k] = 0.5*(input[k] - input[k-nx]);
+	}
+}
+
+
+__global__ void edgeColumnsGradient(const float* input, float* dx, float* dy, int nx, int ny){
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
+	const int p = i * nx;
+	const int k = (i+1) * nx - 1;
+	if(i < ny-1) {
+		dx[p] = 0.5*(input[p+1] - input[p]);
+		dy[p] = 0.5*(input[p+nx] - input[p-nx]);
+		dx[k] = 0.5*(input[k] - input[k-1]);
+		dy[k] = 0.5*(input[k+nx] - input[k-nx]);
+	}
+}
+
+
+__global__ void cornersGradient(const float* input, float* dx, float* dy, int nx, int ny){
+	dx[0] = 0.5*(input[1] - input[0]);
+	dy[0] = 0.5*(input[nx] - input[0]);
+
+	dx[nx-1] = 0.5*(input[nx-1] - input[nx-2]);
+	dy[nx-1] = 0.5*(input[2*nx-1] - input[nx-1]);
+
+	dx[(ny-1)*nx] = 0.5*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
+	dy[(ny-1)*nx] = 0.5*(input[(ny-1)*nx] - input[(ny-2)*nx]);
+
+	dx[ny*nx-1] = 0.5*(input[ny*nx-1] - input[ny*nx-1-1]);
+	dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+}
+
 
 /**
  *
@@ -143,54 +194,22 @@ void centered_gradient(
 		)
 {
 	// compute the gradient on the center body of the image
-#pragma omp parallel for schedule(dynamic)
-	for (int i = 1; i < ny-1; i++)
-	{
-		for(int j = 1; j < nx-1; j++)
-		{
-			const int k = i * nx + j;
-			dx[k] = 0.5*(input[k+1] - input[k-1]);
-			dy[k] = 0.5*(input[k+nx] - input[k-nx]);
-		}
-	}
+	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	bodyGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
 
 	// compute the gradient on the first and last rows
-	for (int j = 1; j < nx-1; j++)
-	{
-		dx[j] = 0.5*(input[j+1] - input[j-1]);
-		dy[j] = 0.5*(input[j+nx] - input[j]);
-
-		const int k = (ny - 1) * nx + j;
-
-		dx[k] = 0.5*(input[k+1] - input[k-1]);
-		dy[k] = 0.5*(input[k] - input[k-nx]);
-	}
+	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	edgeRowsGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
 
 	// compute the gradient on the first and last columns
-	for(int i = 1; i < ny-1; i++)
-	{
-		const int p = i * nx;
-		dx[p] = 0.5*(input[p+1] - input[p]);
-		dy[p] = 0.5*(input[p+nx] - input[p-nx]);
-
-		const int k = (i+1) * nx - 1;
-
-		dx[k] = 0.5*(input[k] - input[k-1]);
-		dy[k] = 0.5*(input[k+nx] - input[k-nx]);
-	}
+	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	edgeColumnsGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
 
 	// compute the gradient at the four corners
-	dx[0] = 0.5*(input[1] - input[0]);
-	dy[0] = 0.5*(input[nx] - input[0]);
-
-	dx[nx-1] = 0.5*(input[nx-1] - input[nx-2]);
-	dy[nx-1] = 0.5*(input[2*nx-1] - input[nx-1]);
-
-	dx[(ny-1)*nx] = 0.5*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
-	dy[(ny-1)*nx] = 0.5*(input[(ny-1)*nx] - input[(ny-2)*nx]);
-
-	dx[ny*nx-1] = 0.5*(input[ny*nx-1] - input[ny*nx-1-1]);
-	dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+	cornersGradient<<<1,1>>>(input, dx, dy, nx, ny);
 }
 
 
@@ -291,8 +310,9 @@ void gaussian(
 		throw;
 	}
 
-	int blocks = (size + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
 	// compute the coefficients of the 1D convolution kernel
+	int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
 	convolution1D<<<blocks, THREADS_PER_BLOCK>>>(B, size, sPi, den);
 
 	// normalize the 1D convolution kernel

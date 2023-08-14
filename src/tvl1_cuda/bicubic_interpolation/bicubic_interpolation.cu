@@ -6,6 +6,7 @@
 // Copyright (C) 2012, Javier Sánchez Pérez <jsanchez@dis.ulpgc.es>
 // All rights reserved.
 
+#include <cmath>
 #include <cstdint>
 #include "bicubic_interpolation.cuh"
 
@@ -14,19 +15,10 @@
   * Neumann boundary condition test
   *
 **/
-int neumann_bc(int x, int nx, bool *out) {
-	if(x < 0)
-	{
-	    x = 0;
-	    *out = true;
-	}
-	else if (x >= nx)
-	{
-	    x = nx - 1;
-	    *out = true;
-	}
-
-	return x;
+__device__ inline int neumann_bc(int x, int nx, bool *out) {
+	*out = (x < 0) || (x >= nx);
+	x = std::max(x, 0);
+	return std::min(x, nx-1);
 }
 
 
@@ -35,7 +27,7 @@ int neumann_bc(int x, int nx, bool *out) {
   * Cubic interpolation in one dimension
   *
 **/
-inline float cubic_interpolation_cell (
+__device__ inline float cubic_interpolation_cell (
 	const float v[4],  //interpolation points
 	float x      //point to be interpolated
 )
@@ -51,7 +43,7 @@ inline float cubic_interpolation_cell (
   * Bicubic interpolation in two dimensions
   *
 **/
-inline float bicubic_interpolation_cell (
+__device__ inline float bicubic_interpolation_cell (
 	const float p[4][4], //array containing the interpolation points
 	float* v, 
 	float x,       //x position to be interpolated
@@ -71,13 +63,13 @@ inline float bicubic_interpolation_cell (
   * Detect if the point goes outside the image domain.
   *
 **/
-float bicubic_interpolation_at(
+__device__ float bicubic_interpolation_at(
 	const float* input, //image to be interpolated
-	const float  uu,    //x component of the vector field
-	const float  vv,    //y component of the vector field
-	const int    nx,    //image width
-	const int    ny,    //image height
-	bool         border_out //if true, return zero outside the region
+	float  uu,    //x component of the vector field
+	float  vv,    //y component of the vector field
+	int    nx,    //image width
+	int    ny,    //image height
+	bool   border_out //if true, return zero outside the region
 )
 {
 	const int sx = (uu < 0)? -1: 1;
@@ -99,33 +91,12 @@ float bicubic_interpolation_at(
 		return 0.0;
 
 	//obtain the interpolation points of the image
-	const float p11 = input[mx  + nx * my];
-	const float p12 = input[x   + nx * my];
-	const float p13 = input[dx  + nx * my];
-	const float p14 = input[ddx + nx * my];
-
-	const float p21 = input[mx  + nx * y];
-	const float p22 = input[x   + nx * y];
-	const float p23 = input[dx  + nx * y];
-	const float p24 = input[ddx + nx * y];
-
-	const float p31 = input[mx  + nx * dy];
-	const float p32 = input[x   + nx * dy];
-	const float p33 = input[dx  + nx * dy];
-	const float p34 = input[ddx + nx * dy];
-
-	const float p41 = input[mx  + nx * ddy];
-	const float p42 = input[x   + nx * ddy];
-	const float p43 = input[dx  + nx * ddy];
-	const float p44 = input[ddx + nx * ddy];
-
-	//create array
 	float v[4];
 	const float pol[4][4] = {
-		{p11, p21, p31, p41},
-		{p12, p22, p32, p42},
-		{p13, p23, p33, p43},
-		{p14, p24, p34, p44}
+		{input[mx  + nx * my], input[mx  + nx * y], input[mx  + nx * dy], input[mx  + nx * ddy]},
+		{input[x   + nx * my], input[x   + nx * y], input[x   + nx * dy], input[x   + nx * ddy]},
+		{input[dx  + nx * my], input[dx  + nx * y], input[dx  + nx * dy], input[dx  + nx * ddy]},
+		{input[ddx + nx * my], input[ddx + nx * y], input[ddx + nx * dy], input[ddx + nx * ddy]}
 	};
 
 	//return interpolation
@@ -143,8 +114,8 @@ void bicubic_interpolation_warp(
 	const float *u,         // x component of the vector field
 	const float *v,         // y component of the vector field
 	float       *output,    // image warped with bicubic interpolation
-	const int    nx,        // image width
-	const int    ny,        // image height
+	int    nx,        // image width
+	int    ny,        // image height
 	bool         border_out // if true, put zeros outside the region
 )
 {

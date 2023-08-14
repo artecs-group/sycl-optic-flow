@@ -26,7 +26,7 @@ private:
     float* _hostU;           // x, y component of the optical flow
 
 	float *_I0s, *_I1s, *_u1s, *_u2s;
-	int *_nx, *_ny;
+	int *_nx, *_ny, *_nxy, *_hNx, *_hNy;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
         *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2, *_B;

@@ -72,6 +72,7 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	cudaMalloc(&_div_p2, _width*_height * sizeof(float));
 	cudaMalloc(&_g1, _width*_height * sizeof(float));
 	cudaMalloc(&_g2, _width*_height * sizeof(float));
+	cudaMalloc(&_error, _width*_height * sizeof(float));
 
 	float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(_zfactor*_zfactor) - 1.0);
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
@@ -111,6 +112,7 @@ TV_L1::~TV_L1() {
 	cudaFree(_g1);
 	cudaFree(_g2);
 	cudaFree(_B);
+	cudaFree(_error);
 }
 
 
@@ -172,6 +174,95 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 	cudaMemcpy(_hostU + size, _u2s, size * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
+
+__global__ void calculateRhoGrad(const float* I1wx, const float* I1wy, const float* I1w,
+	const float* u1, const float* u2, const float* I0, float* grad, float* rho_c)
+{
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	// store the |Grad(I1)|^2
+	grad[i] = (I1wx[i] * I1wx[i]) + (I1wy[i] * I1wy[i]);
+	// compute the constant part of the rho function
+	rho_c[i] = (I1w[i] - I1wx[i] * u1[i] - I1wy[i] * u2[i] - I0[i]);
+}
+
+
+__global__ void estimateThreshold(const float* rho_c, const float* I1wx, const float* u1, const float* I1wy,
+	const float* u2, const float* grad, float lT, size_t size, float* v1, float* v2)
+{
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if(i >= size)
+		return;
+
+	const float rho = rho_c[i] + (I1wx[i] * u1[i] + I1wy[i] * u2[i]);
+	const float fi{-rho/grad[i]};
+	const bool c1{rho >= -lT * grad[i]};
+	const bool c2{rho > lT * grad[i]};
+	const bool c3{grad[i] < GRAD_IS_ZERO};
+	float d1{lT * I1wx[i]}; 
+	float d2{lT * I1wy[i]};
+
+	if(c1) {
+		d1 = fi * I1wx[i];
+		d2 = fi * I1wy[i];
+
+		if(c2) {
+			d1 = -lT * I1wx[i];
+			d2 = -lT * I1wy[i];
+		}
+		else if(c3)
+			d1 = d2 = 0.0f;
+	}
+
+	v1[i] = u1[i] + d1;
+	v2[i] = u2[i] + d2;
+}
+
+
+__global__ void estimateOpticalFlow(float* u1, float* u2, const float* v1, const float* v2, 
+	const float* div_p1, const float* div_p2, float theta, size_t size, float* error)
+{
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if(i < size){		
+		const float u1k = u1[i];
+		const float u2k = u2[i];
+
+		u1[i] = v1[i] + theta * div_p1[i];
+		u2[i] = v2[i] + theta * div_p2[i];
+
+		error[i] = (u1[i] - u1k) * (u1[i] - u1k) + (u2[i] - u2k) * (u2[i] - u2k);
+	}
+}
+
+
+__global__ void estimateGArgs(const float* div_p1, const float* div_p2, const float* v1, const float* v2, 
+	size_t size, float taut, float* g1, float* g2)
+{
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if(i < size){		
+		g1[i] = 1.0f + taut * hypotf(div_p1[i], v1[i]);
+		g2[i] = 1.0f + taut * hypotf(div_p2[i], v2[i]);
+	}
+}
+
+
+__global__ void divideByG(const float* g1, const float* g2, size_t size, float* p11, float* p12, 
+	float* p21, float* p22)
+{
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if(i < size){		
+		p11[i] = p11[i] / g1[i];
+		p12[i] = p12[i] / g1[i];
+		p21[i] = p21[i] / g2[i];
+		p22[i] = p22[i] / g2[i];
+	}
+}
+
+
 /**
  *
  * Function to compute the optical flow in one scale
@@ -180,34 +271,30 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny)
 {
 	const size_t size = nx * ny;
-	const float l_t = _lambda * _theta;
+	const float lT = _lambda * _theta;
 
 	centered_gradient(I1, _I1x, _I1y, nx, ny);
 
 	// initialization of p
-	std::fill(_p11, _p11 + size, 0.0f);
-	std::fill(_p12, _p12 + size, 0.0f);
-	std::fill(_p21, _p21 + size, 0.0f);
-	std::fill(_p22, _p22 + size, 0.0f);
+	cudaMemset(_p11, 0.0f, size * sizeof(float));
+	cudaMemset(_p12, 0.0f, size * sizeof(float));
+	cudaMemset(_p21, 0.0f, size * sizeof(float));
+	cudaMemset(_p22, 0.0f, size * sizeof(float));
 
-	for (int warpings = 0; warpings < _warps; warpings++)
-	{
+	const size_t TH2{THREADS_PER_BLOCK/8};
+	dim3 blocks(nx / TH2 + (nx % TH2 == 0 ? 0:1), ny / TH2 + (ny % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? nx:TH2, blocks.y == 1 ? ny:TH2);
+
+	const size_t blocks1 = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	const size_t threads1 = blocks1 == 1 ? size:THREADS_PER_BLOCK;
+
+	for (int warpings = 0; warpings < _warps; warpings++) {
 		// compute the warping of the target image and its derivatives
-		bicubic_interpolation_warp(I1,  u1, u2, _I1w,  nx, ny, true);
-		bicubic_interpolation_warp(_I1x, u1, u2, _I1wx, nx, ny, true);
-		bicubic_interpolation_warp(_I1y, u1, u2, _I1wy, nx, ny, true);
+		bicubic_interpolation_warp<<<blocks, threads>>>(I1,  u1, u2, _I1w,  nx, ny, true);
+		bicubic_interpolation_warp<<<blocks, threads>>>(_I1x, u1, u2, _I1wx, nx, ny, true);
+		bicubic_interpolation_warp<<<blocks, threads>>>(_I1y, u1, u2, _I1wy, nx, ny, true);
 
-		#pragma omp parallel for simd
-		for (int i = 0; i < size; i++) {
-			// store the |Grad(I1)|^2
-			_grad[i] = (_I1wx[i] * _I1wx[i]) + (_I1wy[i] * _I1wy[i]);
-		}
-
-		#pragma omp parallel for simd
-		for (int i = 0; i < size; i++) {
-			// compute the constant part of the rho function
-			_rho_c[i] = (_I1w[i] - _I1wx[i] * u1[i] - _I1wy[i] * u2[i] - I0[i]);
-		}			
+		calculateRhoGrad<<<blocks1,threads1>>>(_I1wx, _I1wy, _I1w, u1, u2, I0, _grad, _rho_c);		
 
 		int n = 0;
 		float error = INFINITY;
@@ -216,50 +303,16 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			n++;
 			// estimate the values of the variable (v1, v2)
 			// (thresholding opterator TH)
-			#pragma omp parallel for simd
-			for (int i = 0; i < size; i++) {
-				const float rho = _rho_c[i] + (_I1wx[i] * u1[i] + _I1wy[i] * u2[i]);
-				const float fi{-rho/_grad[i]};
-				const bool c1{rho >= -l_t * _grad[i]};
-				const bool c2{rho > l_t * _grad[i]};
-				const bool c3{_grad[i] < GRAD_IS_ZERO};
-				float d1{l_t * _I1wx[i]}; 
-				float d2{l_t * _I1wy[i]};
-
-				if(c1) {
-					d1 = fi * _I1wx[i];
-					d2 = fi * _I1wy[i];
-
-					if(c2) {
-						d1 = -l_t * _I1wx[i];
-						d2 = -l_t * _I1wy[i];
-					}
-					else if(c3)
-						d1 = d2 = 0.0f;
-				}
-
-				_v1[i] = u1[i] + d1;
-				_v2[i] = u2[i] + d2;
-			}
+			estimateThreshold<<<blocks1,threads1>>>(_rho_c, _I1wx, u1, _I1wy, u2, _grad, lT, size, _v1, _v2);
 
 			// compute the divergence of the dual variable (p1, p2)
 			divergence(_p11, _p12, _div_p1, nx ,ny);
 			divergence(_p21, _p22, _div_p2, nx ,ny);
 
 			// estimate the values of the optical flow (u1, u2)
-			error = 0.0;
-			#pragma omp parallel for reduction(+:error)
-			for (int i = 0; i < size; i++)
-			{
-				const float u1k = u1[i];
-				const float u2k = u2[i];
-
-				u1[i] = _v1[i] + _theta * _div_p1[i];
-				u2[i] = _v2[i] + _theta * _div_p2[i];
-
-				error += (u1[i] - u1k) * (u1[i] - u1k) +
-					(u2[i] - u2k) * (u2[i] - u2k);
-			}
+			cudaMemset(_error, 0.0f, size * sizeof(float));
+			estimateOpticalFlow<<<blocks1,threads1>>>(u1, u2, _v1, _v2, _div_p1, _div_p2, _theta, size, _error);
+			cublasSasum(_handle, size, _error, 1, &error);
 			error /= size;
 
 			// compute the gradient of the optical flow (Du1, Du2)
@@ -268,25 +321,14 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 
 			// estimate the values of the dual variable (p1, p2)
 			const float taut = _tau / _theta;
-			#pragma omp parallel for simd
-			#pragma ivdep
-			for (int i = 0; i < size; i++) {
-				_g1[i] = 1.0f + taut * std::hypot(_div_p1[i], _v1[i]);
-				_g2[i] = 1.0f + taut * std::hypot(_div_p2[i], _v2[i]);
-			}
+			estimateGArgs<<<blocks1,threads1>>>(_div_p1, _div_p2, _v1, _v2, size, taut, _g1, _g2);
 
 			cublasSaxpy(_handle, size, &taut, _div_p1, 1, _p11, 1);
 			cublasSaxpy(_handle, size, &taut, _v1, 1, _p12, 1);
 			cublasSaxpy(_handle, size, &taut, _div_p2, 1, _p21, 1);
 			cublasSaxpy(_handle, size, &taut, _v2, 1, _p22, 1);
 
-			#pragma omp parallel for simd
-			for (int i = 0; i < size; i++) {
-				_p11[i] = _p11[i] / _g1[i];
-				_p12[i] = _p12[i] / _g1[i];
-				_p21[i] = _p21[i] / _g2[i];
-				_p22[i] = _p22[i] / _g2[i];
-			}
+			divideByG<<<blocks1,threads1>>>(_g1, _g2, size, _p11, _p12, _p21, _p22);
 		}
 	}
 }

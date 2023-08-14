@@ -11,13 +11,44 @@
 
 #include "mask.cuh"
 
-/**
- *
- * Details on how to compute the divergence and the grad(u) can be found in:
- * [2] A. Chambolle, "An Algorithm for Total Variation Minimization and
- * Applications", Journal of Mathematical Imaging and Vision, 20: 89-97, 2004
- *
- **/
+
+__global__ void bodyDivergence(const float* v1, const float* v2, float* div, int nx, int ny){
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + nx + 1;
+	if(i < (nx-1)*(ny-1)){
+		div[i]  = (v1[i] - v1[i-1]) + (v2[i] - v2[i-nx]);
+	}
+}
+
+
+__global__ void edgeRowsDivergence(const float* v1, const float* v2, float* div, int nx, int ny){
+	const int j = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
+	const int p = (ny-1) * nx + j;
+
+	if(j < (nx-1)){
+		div[j] = v1[j] - v1[j-1] + v2[j];
+		div[p] = v1[p] - v1[p-1] - v2[p-nx];
+	}
+}
+
+
+__global__ void edgeColumnsDivergence(const float* v1, const float* v2, float* div, int nx, int ny){
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
+	const int p1 = i * nx;
+	const int p2 = (i+1) * nx - 1;
+
+	if(i < (ny-1)){
+		div[p1] =  v1[p1]   + v2[p1] - v2[p1 - nx];
+		div[p2] = -v1[p2-1] + v2[p2] - v2[p2 - nx];
+	}
+}
+
+
+__global__ void cornersDivergence(const float* v1, const float* v2, float* div, int nx, int ny){
+	div[0]         =  v1[0] + v2[0];
+	div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
+	div[(ny-1)*nx] =  v1[(ny-1)*nx] - v2[(ny-2)*nx];
+	div[ny*nx-1]   = -v1[ny*nx - 2] - v2[(ny-1)*nx - 1];
+}
 
 
 /**
@@ -32,46 +63,55 @@ void divergence(
 		float *div,      // output divergence
 		const int nx,    // image width
 		const int ny     // image height
-	       )
+)
 {
 	// compute the divergence on the central body of the image
-	#pragma omp parallel for schedule(dynamic)
-	for (int i = 1; i < ny-1; i++) {
-		#pragma omp simd
-		#pragma ivdep
-		for(int j = 1; j < nx-1; j++) {
-			const int p  = i * nx + j;
-			div[p]  = (v1[p] - v1[p-1]) + (v2[p] - v2[p-nx]);
-		}
-	}
+	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	bodyDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
 
 	// compute the divergence on the first and last rows
-	#pragma omp parallel for simd
-	#pragma ivdep
-	for (int j = 1; j < nx-1; j++)
-	{
-		const int p = (ny-1) * nx + j;
-
-		div[j] = v1[j] - v1[j-1] + v2[j];
-		div[p] = v1[p] - v1[p-1] - v2[p-nx];
-	}
+	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	edgeRowsDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
 
 	// compute the divergence on the first and last columns
-	#pragma omp parallel for
-	for (int i = 1; i < ny-1; i++)
-	{
-		const int p1 = i * nx;
-		const int p2 = (i+1) * nx - 1;
+	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	edgeColumnsDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
 
-		div[p1] =  v1[p1]   + v2[p1] - v2[p1 - nx];
-		div[p2] = -v1[p2-1] + v2[p2] - v2[p2 - nx];
+	cornersDivergence<<<1,1>>>(v1, v2, div, nx, ny);
+}
 
+
+__global__ void bodyForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny){
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if(i < (nx-1)*(ny-1)){
+		fx[i] = f[i+1] - f[i];
+		fy[i] = f[i+nx] - f[i];
 	}
+}
 
-	div[0]         =  v1[0] + v2[0];
-	div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
-	div[(ny-1)*nx] =  v1[(ny-1)*nx] - v2[(ny-2)*nx];
-	div[ny*nx-1]   = -v1[ny*nx - 2] - v2[(ny-1)*nx - 1];
+
+__global__ void rowsForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny){
+	const int j = blockIdx.x * blockDim.x + threadIdx.x;
+	const int p = (ny-1) * nx + j;
+
+	if(j < (nx-1)){
+		fx[p] = f[p+1] - f[p];
+		fy[p] = 0;
+	}
+}
+
+
+__global__ void columnsForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny){
+	const int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+	const int p = i * nx-1;
+
+	if(i < ny){
+		fx[p] = 0;
+		fy[p] = f[p+nx] - f[p];
+	}
 }
 
 
@@ -90,46 +130,25 @@ void forward_gradient(
 		)
 {
 	// compute the gradient on the central body of the image
-	#pragma omp parallel for schedule(dynamic)
-	for (int i = 0; i < ny-1; i++)
-	{
-		#pragma omp simd
-		#pragma ivdep
-		for(int j = 0; j < nx-1; j++)
-		{
-			const int p  = i * nx + j;
-			const int p1 = p + 1;
-			const int p2 = p + nx;
-
-			fx[p] = f[p1] - f[p];
-			fy[p] = f[p2] - f[p];
-		}
-	}
+	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	bodyForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
 
 	// compute the gradient on the last row
-	for (int j = 0; j < nx-1; j++)
-	{
-		const int p = (ny-1) * nx + j;
-
-		fx[p] = f[p+1] - f[p];
-		fy[p] = 0;
-	}
+	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	rowsForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
 
 	// compute the gradient on the last column
-	for (int i = 1; i < ny; i++)
-	{
-		const int p = i * nx-1;
+	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	columnsForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
 
-		fx[p] = 0;
-		fy[p] = f[p+nx] - f[p];
-	}
-
-	fx[ny * nx - 1] = 0;
-	fy[ny * nx - 1] = 0;
+	// corners
+	cudaMemset(fx + (ny * nx - 1), 0.0f, sizeof(float));
+	cudaMemset(fy + (ny * nx - 1), 0.0f, sizeof(float));
 }
 
-//// i = 0, 1, 2 ; + 2 = 2, 3, 4
-//// j = 0, 1, 2 ; + 2 = 2, 3, 4
 
 __global__ void bodyGradient(const float* input, float* dx, float* dy, int nx, int ny){
 	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + nx + 1;
@@ -311,9 +330,9 @@ void gaussian(
 	}
 
 	// compute the coefficients of the 1D convolution kernel
-	int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
-	int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
-	convolution1D<<<blocks, THREADS_PER_BLOCK>>>(B, size, sPi, den);
+	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	const int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
+	convolution1D<<<blocks, threads>>>(B, size, sPi, den);
 
 	// normalize the 1D convolution kernel
 	float norm, hB;

@@ -20,4 +20,13 @@ __global__ void convolution1D(float* B, int size, float sPi, float den);
 __global__ void lineConvolution(const float *I, float *output, const float *B, int xdim, int ydim, int size, int bdx);
 __global__ void columnConvolution(const float* I, float* output, const float* B, int xdim, int ydim, int size, int bdy);
 
+__global__ void cornersDivergence(const float* v1, const float* v2, float* div, int nx, int ny);
+__global__ void edgeColumnsDivergence(const float* v1, const float* v2, float* div, int nx, int ny);
+__global__ void edgeRowsDivergence(const float* v1, const float* v2, float* div, int nx, int ny);
+__global__ void bodyDivergence(const float* v1, const float* v2, float* div, int nx, int ny);
+
+__global__ void bodyForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny);
+__global__ void rowsForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny);
+__global__ void columnsForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny);
+
 #endif

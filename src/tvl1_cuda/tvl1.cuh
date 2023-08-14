@@ -29,7 +29,7 @@ private:
 	int *_nx, *_ny, *_nxy, *_hNx, *_hNy;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
-        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2, *_B;
+        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2, *_B, *_error;
 
     int _width;     // image width
     int _height;     // image height
@@ -43,5 +43,10 @@ private:
 };
 
 __global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size);
+__global__ void calculateRhoGrad(const float* I1wx, const float* I1wy, const float* I1w, const float* u1, const float* u2, const float* I0, float* grad, float* rho_c);
+__global__ void estimateThreshold(const float* rho_c, const float* I1wx, const float* u1, const float* I1wy, const float* u2, const float* grad, float lT, size_t size, float* v1, float* v2);
+__global__ void estimateOpticalFlow(float* u1, float* u2, const float* v1, const float* v2, const float* div_p1, const float* div_p2, float theta, size_t size, float* error);
+__global__ void estimateGArgs(const float* div_p1, const float* div_p2, const float* v1, const float* v2, size_t size, float taut, float* g1, float* g2);
+__global__ void divideByG(const float* g1, const float* g2, size_t size, float* p11, float* p12, float* p21, float* p22);
 
 #endif

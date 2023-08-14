@@ -6,7 +6,6 @@
 // Copyright (C) 2012, Javier Sánchez Pérez <jsanchez@dis.ulpgc.es>
 // All rights reserved.
 
-#include <cmath>
 #include <cstdint>
 #include "bicubic_interpolation.cuh"
 
@@ -17,8 +16,8 @@
 **/
 __device__ inline int neumann_bc(int x, int nx, bool *out) {
 	*out = (x < 0) || (x >= nx);
-	x = std::max(x, 0);
-	return std::min(x, nx-1);
+	x = max(x, 0);
+	return min(x, nx-1);
 }
 
 
@@ -109,26 +108,23 @@ __device__ float bicubic_interpolation_at(
   * Compute the bicubic interpolation of an image.
   *
 **/
-void bicubic_interpolation_warp(
+__global__ void bicubic_interpolation_warp(
 	const float* input,     // image to be warped
 	const float *u,         // x component of the vector field
 	const float *v,         // y component of the vector field
 	float       *output,    // image warped with bicubic interpolation
 	int    nx,        // image width
 	int    ny,        // image height
-	bool         border_out // if true, put zeros outside the region
-)
+	bool border_out // if true, put zeros outside the region
+) 
 {
-	#pragma omp parallel for
-	for(int i = 0; i < ny; i++)
-		for(int j = 0; j < nx; j++)
-		{
-			const int   p  = i * nx + j;
-			const float uu = j + u[p];
-			const float vv = i + v[p];
+	const int j = blockIdx.x * blockDim.x + threadIdx.x;
+	const int i = blockIdx.y * blockDim.y + threadIdx.y;
+	const int p = i * nx + j;
+	const float uu = j + u[p];
+	const float vv = i + v[p];
 
-			// obtain the bicubic interpolation at position (uu, vv)
-			output[p] = bicubic_interpolation_at(input,
-					uu, vv, nx, ny, border_out);
-		}
+	// obtain the bicubic interpolation at position (uu, vv)
+	if(p < nx*ny)
+		output[p] = bicubic_interpolation_at(input, uu, vv, nx, ny, border_out);
 }

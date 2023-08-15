@@ -4,9 +4,7 @@
 #include <limits>
 
 #include "tvl1.cuh"
-#include "mask/mask.cuh"
-#include "bicubic_interpolation/bicubic_interpolation.cuh"
-#include "zoom/zoom.cuh"
+#include "kernels/kernels.cuh"
 
 /**
  * Implementation of the Zach, Pock and Bischof dual TV-L1 optic flow method
@@ -133,7 +131,7 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 	cudaMemset(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(float));
 
 	// normalize the images between 0 and 255
-	image_normalization(_I0s, _I1s, _I0s, _I1s, size);
+	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
 
 	// pre-smooth the original images
 	gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
@@ -142,11 +140,11 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
 	{
-		zoom_size<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, _zfactor);
+		zoomSize<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, _zfactor);
 
 		// zoom in the images to create the pyramidal structure
-		zoom_out(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
-		zoom_out(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+		zoomOut(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+		zoomOut(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
 	}
 	cudaDeviceSynchronize();
 	cudaMemcpy(_hNx, _nx, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
@@ -159,8 +157,8 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 		dualTVL1(_I0s + (s*size), _I1s + (s*size), _u1s + (s*size), _u2s + (s*size), _hNx[s], _hNy[s]);
 
 		// zoom the optical flow for the next finer scale
-		zoom_in(_u1s + (s*size), _u1s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
-		zoom_in(_u2s + (s*size), _u2s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
+		zoomIn(_u1s + (s*size), _u1s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
+		zoomIn(_u2s + (s*size), _u2s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
 
 		// scale the optical flow with the appropriate zoom factor
 		cublasSscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u1s + (s-1)*size, 1);
@@ -175,94 +173,6 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 }
 
 
-__global__ void calculateRhoGrad(const float* I1wx, const float* I1wy, const float* I1w,
-	const float* u1, const float* u2, const float* I0, float* grad, float* rho_c)
-{
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-	// store the |Grad(I1)|^2
-	grad[i] = (I1wx[i] * I1wx[i]) + (I1wy[i] * I1wy[i]);
-	// compute the constant part of the rho function
-	rho_c[i] = (I1w[i] - I1wx[i] * u1[i] - I1wy[i] * u2[i] - I0[i]);
-}
-
-
-__global__ void estimateThreshold(const float* rho_c, const float* I1wx, const float* u1, const float* I1wy,
-	const float* u2, const float* grad, float lT, size_t size, float* v1, float* v2)
-{
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-	if(i >= size)
-		return;
-
-	const float rho = rho_c[i] + (I1wx[i] * u1[i] + I1wy[i] * u2[i]);
-	const float fi{-rho/grad[i]};
-	const bool c1{rho >= -lT * grad[i]};
-	const bool c2{rho > lT * grad[i]};
-	const bool c3{grad[i] < GRAD_IS_ZERO};
-	float d1{lT * I1wx[i]}; 
-	float d2{lT * I1wy[i]};
-
-	if(c1) {
-		d1 = fi * I1wx[i];
-		d2 = fi * I1wy[i];
-
-		if(c2) {
-			d1 = -lT * I1wx[i];
-			d2 = -lT * I1wy[i];
-		}
-		else if(c3)
-			d1 = d2 = 0.0f;
-	}
-
-	v1[i] = u1[i] + d1;
-	v2[i] = u2[i] + d2;
-}
-
-
-__global__ void estimateOpticalFlow(float* u1, float* u2, const float* v1, const float* v2, 
-	const float* div_p1, const float* div_p2, float theta, size_t size, float* error)
-{
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-	if(i < size){		
-		const float u1k = u1[i];
-		const float u2k = u2[i];
-
-		u1[i] = v1[i] + theta * div_p1[i];
-		u2[i] = v2[i] + theta * div_p2[i];
-
-		error[i] = (u1[i] - u1k) * (u1[i] - u1k) + (u2[i] - u2k) * (u2[i] - u2k);
-	}
-}
-
-
-__global__ void estimateGArgs(const float* div_p1, const float* div_p2, const float* v1, const float* v2, 
-	size_t size, float taut, float* g1, float* g2)
-{
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-	if(i < size){		
-		g1[i] = 1.0f + taut * hypotf(div_p1[i], v1[i]);
-		g2[i] = 1.0f + taut * hypotf(div_p2[i], v2[i]);
-	}
-}
-
-
-__global__ void divideByG(const float* g1, const float* g2, size_t size, float* p11, float* p12, 
-	float* p21, float* p22)
-{
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-	if(i < size){		
-		p11[i] = p11[i] / g1[i];
-		p12[i] = p12[i] / g1[i];
-		p21[i] = p21[i] / g2[i];
-		p22[i] = p22[i] / g2[i];
-	}
-}
-
-
 /**
  *
  * Function to compute the optical flow in one scale
@@ -273,7 +183,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 	const size_t size = nx * ny;
 	const float lT = _lambda * _theta;
 
-	centered_gradient(I1, _I1x, _I1y, nx, ny);
+	centeredGradient(I1, _I1x, _I1y, nx, ny);
 
 	// initialization of p
 	cudaMemset(_p11, 0.0f, size * sizeof(float));
@@ -290,9 +200,9 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 
 	for (int warpings = 0; warpings < _warps; warpings++) {
 		// compute the warping of the target image and its derivatives
-		bicubic_interpolation_warp<<<blocks, threads>>>(I1,  u1, u2, _I1w,  nx, ny, true);
-		bicubic_interpolation_warp<<<blocks, threads>>>(_I1x, u1, u2, _I1wx, nx, ny, true);
-		bicubic_interpolation_warp<<<blocks, threads>>>(_I1y, u1, u2, _I1wy, nx, ny, true);
+		bicubicInterpolationWarp<<<blocks, threads>>>(I1,  u1, u2, _I1w,  nx, ny, true);
+		bicubicInterpolationWarp<<<blocks, threads>>>(_I1x, u1, u2, _I1wx, nx, ny, true);
+		bicubicInterpolationWarp<<<blocks, threads>>>(_I1y, u1, u2, _I1wy, nx, ny, true);
 
 		calculateRhoGrad<<<blocks1,threads1>>>(_I1wx, _I1wy, _I1w, u1, u2, I0, _grad, _rho_c);		
 
@@ -316,8 +226,8 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			error /= size;
 
 			// compute the gradient of the optical flow (Du1, Du2)
-			forward_gradient(u1, _div_p1, _v1, nx ,ny);
-			forward_gradient(u2, _div_p2, _v2, nx ,ny);
+			forwardGradient(u1, _div_p1, _v1, nx ,ny);
+			forwardGradient(u2, _div_p2, _v2, nx ,ny);
 
 			// estimate the values of the dual variable (p1, p2)
 			const float taut = _tau / _theta;
@@ -334,22 +244,12 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 }
 
 
-__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size) {
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-	
-	if(i < size) {
-		I0n[i] = 255.0 * (I0[i] - min) / den;
-		I1n[i] = 255.0 * (I1[i] - min) / den;
-	}
-}
-
-
 /**
  *
  * Function to normalize the images between 0 and 255
  *
  **/
-void TV_L1::image_normalization(
+void TV_L1::imageNormalization(
 		const float *I0,  // input image0
 		const float *I1,  // input image1
 		float *I0n,       // normalized output image0
@@ -381,4 +281,205 @@ void TV_L1::image_normalization(
 	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
 	const int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
 	normKernel<<<blocks, threads>>>(I0, I1, I0n, I1n, min, den, size);
+}
+
+
+/**
+ * Function to compute the divergence with backward differences
+ **/
+void TV_L1::divergence(
+		const float *v1, // x component of the vector field
+		const float *v2, // y component of the vector field
+		float *div,      // output divergence
+		const int nx,    // image width
+		const int ny     // image height
+)
+{
+	// compute the divergence on the central body of the image
+	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	bodyDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
+
+	// compute the divergence on the first and last rows
+	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	edgeRowsDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
+
+	// compute the divergence on the first and last columns
+	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	edgeColumnsDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
+
+	cornersDivergence<<<1,1>>>(v1, v2, div, nx, ny);
+}
+
+
+/**
+ * Function to compute the gradient with forward differences
+ **/
+void TV_L1::forwardGradient(
+		const float *f, //input image
+		float *fx,      //computed x derivative
+		float *fy,      //computed y derivative
+		const int nx,   //image width
+		const int ny    //image height
+		)
+{
+	// compute the gradient on the central body of the image
+	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	bodyForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
+
+	// compute the gradient on the last row
+	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	rowsForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
+
+	// compute the gradient on the last column
+	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	columnsForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
+
+	// corners
+	cudaMemset(fx + (ny * nx - 1), 0.0f, sizeof(float));
+	cudaMemset(fy + (ny * nx - 1), 0.0f, sizeof(float));
+}
+
+
+/**
+ * Function to compute the gradient with centered differences
+ **/
+void TV_L1::centeredGradient(
+		const float* input,  //input image
+		float *dx,           //computed x derivative
+		float *dy,           //computed y derivative
+		const int nx,        //image width
+		const int ny         //image height
+		)
+{
+	// compute the gradient on the center body of the image
+	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	bodyGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
+
+	// compute the gradient on the first and last rows
+	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	edgeRowsGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
+
+	// compute the gradient on the first and last columns
+	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	edgeColumnsGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
+
+	// compute the gradient at the four corners
+	cornersGradient<<<1,1>>>(input, dx, dy, nx, ny);
+}
+
+
+/**
+ * In-place Gaussian smoothing of an image
+ */
+void TV_L1::gaussian(
+	float* I,             // input/output image
+	float* B,			  // coefficients of the 1D convolution
+	const int* xdim,       // image width
+	const int* ydim,       // image height
+	const double sigma,    // Gaussian sigma
+	cublasHandle_t* handle
+)
+{
+	const float den  = 2*sigma*sigma;
+	const float sPi = sigma * std::sqrt(M_PI * 2);
+	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
+	int bdx, bdy, hXdim, hYdim;
+	cudaMemcpy(&hXdim, xdim, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&hYdim, ydim, sizeof(int), cudaMemcpyDeviceToHost);
+	bdx = hXdim + size;
+	bdy = hYdim + size;
+
+	if (size > hXdim) {
+		std::cerr << "Gaussian smooth: sigma too large." << std::endl;
+		throw;
+	}
+
+	// compute the coefficients of the 1D convolution kernel
+	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	const int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
+	convolution1D<<<blocks, threads>>>(B, size, sPi, den);
+
+	// normalize the 1D convolution kernel
+	float norm, hB;
+	cublasSasum(*handle, size, B, 1, &norm);
+	cudaMemcpy(&hB, B, sizeof(float), cudaMemcpyDeviceToHost);
+	norm = 1 / (norm * 2 - hB);
+	cublasSscal(*handle, size, &norm, B, 1);
+
+	// convolution of each line of the input image
+    lineConvolution<<<hYdim, THREADS_PER_BLOCK>>>(I, I, B, hXdim, hYdim, size, bdx);
+
+	// convolution of each column of the input image
+    columnConvolution<<<hXdim, THREADS_PER_BLOCK>>>(I, I, B, hXdim, hYdim, size, bdy);
+}
+
+
+/**
+ * Downsample an image
+**/
+void TV_L1::zoomOut(
+	const float *I,    // input image
+	float *Iout,       // output image
+	float* B,
+	const int* nx,      // image width
+	const int* ny,      // image height
+	int* nxx,
+	int* nyy,
+	const float factor, // zoom factor between 0 and 1
+	float* Is,           // temporary working image
+	cublasHandle_t* handle
+)
+{
+	cudaMemcpy(Is, I, *nx * *ny * sizeof(float), cudaMemcpyDeviceToDevice);
+
+	// compute the size of the zoomed image
+	zoomSize<<<1,1>>>(nx, ny, nxx, nyy, factor);
+	int sx, sy;
+	cudaMemcpy(&sx, nxx, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&sy, nyy, sizeof(int), cudaMemcpyDeviceToHost);
+
+	// compute the Gaussian sigma for smoothing
+	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
+
+	// pre-smooth the image
+	gaussian(Is, B, nx, ny, sigma, handle);
+
+	// re-sample the image using bicubic interpolation
+	const size_t TH2{THREADS_PER_BLOCK/8};
+	dim3 blocks(sx / TH2 + (sx % TH2 == 0 ? 0:1), sy / TH2 + (sy % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? sx:TH2, blocks.y == 1 ? sy:TH2);
+	bicubicResample<<<blocks, threads>>>(Is, Iout, nxx, nyy, nx, ny, factor);
+}
+
+
+/**
+ * Function to upsample the image
+**/
+void TV_L1::zoomIn(
+	const float *I, // input image
+	float *Iout,    // output image
+	const int* nx,         // width of the original image
+	const int* ny,         // height of the original image
+	const int* nxx,        // width of the zoomed image
+	const int* nyy         // height of the zoomed image
+)
+{
+	int sx, sy;
+	cudaMemcpy(&sx, nxx, sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&sy, nyy, sizeof(int), cudaMemcpyDeviceToHost);
+
+	// re-sample the image using bicubic interpolation	
+	const size_t TH2{THREADS_PER_BLOCK/8};
+	dim3 blocks(sx / TH2 + (sx % TH2 == 0 ? 0:1), sy / TH2 + (sy % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? sx:TH2, blocks.y == 1 ? sy:TH2);
+	bicubicResample2<<<blocks, threads>>>(I, Iout, nxx, nyy, nx, ny);
 }

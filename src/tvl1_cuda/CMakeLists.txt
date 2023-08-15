@@ -11,17 +11,13 @@ set(This tvl1)
 
 set(Headers
     tvl1.cuh
-    zoom/zoom.cuh
-    mask/mask.cuh
-    bicubic_interpolation/bicubic_interpolation.cuh
+    kernels/kernels.cuh
 )
 
 set(Source
     main.cu
     tvl1.cu
-    zoom/zoom.cu
-    mask/mask.cu
-    bicubic_interpolation/bicubic_interpolation.cu
+    kernels/kernels.cu
 )
 
 set(EXTRA_FLAGS "")

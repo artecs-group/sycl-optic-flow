@@ -5,8 +5,9 @@
 #include <cublas_v2.h>
 
 constexpr size_t MAX_ITERATIONS{300};
-constexpr float PRESMOOTHING_SIGMA{0.8f}; 
-constexpr float GRAD_IS_ZERO{1E-10}; 
+constexpr float PRESMOOTHING_SIGMA{0.8f};
+constexpr float ZOOM_SIGMA_ZERO{0.6};
+constexpr size_t DEFAULT_GAUSSIAN_WINDOW_SIZE{5};
 
 class TV_L1 { 
 public:
@@ -19,11 +20,17 @@ public:
 
 private:
     void dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny);
-    void image_normalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
+    void imageNormalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
+    void zoomOut(const float *I, float *Iout, float* B, const int* nx, const int* ny, int* nxx, int* nyy, const float factor, float* Is, cublasHandle_t* handle);
+    void zoomIn(const float *I, float *Iout, const int* nx, const int* ny, const int* nxx, const int* nyy);
+    void divergence(const float *v1, const float *v2, float *div, const int nx, const int ny);
+    void forwardGradient(const float *f, float *fx, float *fy, const int nx, const int ny);
+    void centeredGradient(const float* input, float *dx, float *dy, const int nx, const int ny);
+    void gaussian(float *I, float* B, const int* xdim, const int* ydim, const double sigma, cublasHandle_t* handle);
 
     cublasHandle_t _handle;
 
-    float* _hostU;           // x, y component of the optical flow
+    float* _hostU;
 
 	float *_I0s, *_I1s, *_u1s, *_u2s;
 	int *_nx, *_ny, *_nxy, *_hNx, *_hNy;
@@ -41,12 +48,5 @@ private:
     int _warps;   // number of warpings per scale
     float _epsilon; // tolerance for numerical convergence
 };
-
-__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size);
-__global__ void calculateRhoGrad(const float* I1wx, const float* I1wy, const float* I1w, const float* u1, const float* u2, const float* I0, float* grad, float* rho_c);
-__global__ void estimateThreshold(const float* rho_c, const float* I1wx, const float* u1, const float* I1wy, const float* u2, const float* grad, float lT, size_t size, float* v1, float* v2);
-__global__ void estimateOpticalFlow(float* u1, float* u2, const float* v1, const float* v2, const float* div_p1, const float* div_p2, float theta, size_t size, float* error);
-__global__ void estimateGArgs(const float* div_p1, const float* div_p2, const float* v1, const float* v2, size_t size, float taut, float* g1, float* g2);
-__global__ void divideByG(const float* g1, const float* g2, size_t size, float* p11, float* p12, float* p21, float* p22);
 
 #endif

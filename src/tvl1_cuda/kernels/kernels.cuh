@@ -12,8 +12,8 @@ __global__ void edgeRowsGradient(const float* input, float* dx, float* dy, int n
 __global__ void edgeColumnsGradient(const float* input, float* dx, float* dy, int nx, int ny);
 __global__ void cornersGradient(const float* input, float* dx, float* dy, int nx, int ny);
 __global__ void convolution1D(float* B, int size, float sPi, float den);
-__global__ void lineConvolution(const float *I, float *output, const float *B, int xdim, int ydim, int size, int bdx);
-__global__ void columnConvolution(const float* I, float* output, const float* B, int xdim, int ydim, int size, int bdy);
+__global__ void lineConvolution(const float *I, float *output, const float *B, const int* xDim, const int* yDim, int size);
+__global__ void columnConvolution(const float* I, float* output, const float* B, const int* xDim, const int* yDim, int size);
 
 __global__ void cornersDivergence(const float* v1, const float* v2, float* div, int nx, int ny);
 __global__ void edgeColumnsDivergence(const float* v1, const float* v2, float* div, int nx, int ny);

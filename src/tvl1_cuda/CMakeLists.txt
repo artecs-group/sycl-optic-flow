@@ -38,7 +38,7 @@ find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source} ${Headers})
 
-set(CXXFLAGS "-O3" "-lcublas" ${EXTRA_FLAGS})
+set(CXXFLAGS "-O3" "-lcublas" "-fopenmp" ${EXTRA_FLAGS})
 add_compile_definitions(THREADS_PER_BLOCK=${THREADS_PER_BLOCK} MAX_SHARED_SIZE=${MAX_SHARED_SIZE})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})
 target_link_directories(${This} PRIVATE)

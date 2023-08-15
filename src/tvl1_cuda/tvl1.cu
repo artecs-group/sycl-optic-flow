@@ -134,8 +134,11 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
 
 	// pre-smooth the original images
-	gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
-	gaussian(_I1s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
+	try {
+		gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
+		gaussian(_I1s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
+	}
+	catch(const std::exception& e) { throw; }
 
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
@@ -143,8 +146,11 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 		zoomSize<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, _zfactor);
 
 		// zoom in the images to create the pyramidal structure
-		zoomOut(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
-		zoomOut(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+		try {
+			zoomOut(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+			zoomOut(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+		}
+		catch(const std::exception& e) { throw; }
 	}
 	cudaDeviceSynchronize();
 	cudaMemcpy(_hNx, _nx, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
@@ -392,11 +398,9 @@ void TV_L1::gaussian(
 	const float den  = 2*sigma*sigma;
 	const float sPi = sigma * std::sqrt(M_PI * 2);
 	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
-	int bdx, bdy, hXdim, hYdim;
+	int hXdim{0}, hYdim{0};
 	cudaMemcpy(&hXdim, xdim, sizeof(int), cudaMemcpyDeviceToHost);
 	cudaMemcpy(&hYdim, ydim, sizeof(int), cudaMemcpyDeviceToHost);
-	bdx = hXdim + size;
-	bdy = hYdim + size;
 
 	if (size > hXdim) {
 		std::cerr << "Gaussian smooth: sigma too large." << std::endl;
@@ -405,7 +409,7 @@ void TV_L1::gaussian(
 
 	// compute the coefficients of the 1D convolution kernel
 	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
-	const int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
+	const int threads = (blocks == 1) ? size : THREADS_PER_BLOCK;
 	convolution1D<<<blocks, threads>>>(B, size, sPi, den);
 
 	// normalize the 1D convolution kernel
@@ -415,11 +419,16 @@ void TV_L1::gaussian(
 	norm = 1 / (norm * 2 - hB);
 	cublasSscal(*handle, size, &norm, B, 1);
 
+    // Adjust shared memory size based on the new approach
+    int chunkSize = std::min(MAX_SHARED_SIZE, hXdim + size);
+    int sharedMemorySize = chunkSize * sizeof(float);
 	// convolution of each line of the input image
-    lineConvolution<<<hYdim, THREADS_PER_BLOCK>>>(I, I, B, hXdim, hYdim, size, bdx);
+    lineConvolution<<<hYdim, THREADS_PER_BLOCK, sharedMemorySize>>>(I, I, B, xdim, ydim, size);
 
+    chunkSize = std::min(MAX_SHARED_SIZE, hYdim + size);
+    sharedMemorySize = chunkSize * sizeof(float);
 	// convolution of each column of the input image
-    columnConvolution<<<hXdim, THREADS_PER_BLOCK>>>(I, I, B, hXdim, hYdim, size, bdy);
+    columnConvolution<<<hXdim, THREADS_PER_BLOCK, sharedMemorySize>>>(I, I, B, xdim, ydim, size);
 }
 
 
@@ -451,7 +460,8 @@ void TV_L1::zoomOut(
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
-	gaussian(Is, B, nx, ny, sigma, handle);
+	try { gaussian(Is, B, nx, ny, sigma, handle); }
+	catch(const std::exception& e) { throw; }
 
 	// re-sample the image using bicubic interpolation
 	const size_t TH2{THREADS_PER_BLOCK/8};

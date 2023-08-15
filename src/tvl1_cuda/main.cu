@@ -83,7 +83,9 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
     cv::Mat flow_angle(height, width, CV_32F);
 
     // Populate the flow_magnitude and flow_angle matrices from the flowData array
+    #pragma omp parallel for
     for (int y = 0; y < height; ++y) {
+        #pragma omp simd
         for (int x = 0; x < width; ++x) {
             int index = y * width + x;
             float u = flowData[index];
@@ -102,7 +104,9 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
     cv::Mat hsv(height, width, CV_8UC3, cv::Scalar(0, 255, 255));
 
     hsv.at<cv::Vec3b>(cv::Point(0, 0))[0] = 0;
+    #pragma omp parallel for
     for (int y = 0; y < height; ++y) {
+        #pragma omp simd
         for (int x = 0; x < width; ++x) {
             hsv.at<cv::Vec3b>(y, x)[0] = static_cast<uint8_t>(flow_angle.at<uint8_t>(y, x));
             hsv.at<cv::Vec3b>(y, x)[1] = 255;
@@ -160,13 +164,18 @@ int App::run() {
         cv::cvtColor(auxFrame, m_frameGray2, COLOR_BGR2GRAY);
 
         if (m_process) {
+            #pragma omp parallel for simd
             for (size_t i = 0; i < width*height; i++) {
                 I0[i] = static_cast<float>(m_frameGray.data[i]);
                 I1[i] = static_cast<float>(m_frameGray2.data[i]);
             }
-
-            tvl1.runDualTVL1Multiscale(I0, I1);
-            flowToColor(width, height, tvl1.getU(), m_frameGray);
+            try {
+                tvl1.runDualTVL1Multiscale(I0, I1);
+                // flowToColor(width, height, tvl1.getU(), m_frameGray);
+            }
+            catch(const std::exception& e) {
+                std::cerr << e.what() << '\n';
+            }
         }
         timer.stop();
 

@@ -131,78 +131,52 @@ __global__ void convolution1D(float* B, int size, float sPi, float den) {
 }
 
 
-__global__ void lineConvolution(const float *I, float *output, const float *B, const int* xDim, const int* yDim, int size) {
-    int k = blockIdx.x;  // Each block handles a single line of the input image
+__global__ void lineConvolution(const float *I, float *output, const float *B, const int* xDim, const int* yDim, int size, float* buffer) {
+	int k = blockIdx.y * blockDim.y + threadIdx.y; // Row index
+	const int xdim{xDim[0]}, ydim{yDim[0]};
+    const int bdx = xdim + size;
 
-	const int xdim{*xDim}, ydim{*yDim};
-    // Iterate over chunks of the line to fit within shared memory constraints
-    const int chunkSize = min(MAX_SHARED_SIZE, xdim + size);
-    const int numChunks = (xdim + size + chunkSize - 1) / chunkSize;
+    if (k < ydim) {
+        int i, j;
+        for (i = size; i < bdx; i++)
+            buffer[i] = I[k * xdim + i - size];
 
-    for (int chunk = 0; chunk < numChunks; ++chunk) {
-        int chunkStart = chunk * chunkSize;
-        int chunkEnd = min(chunkStart + chunkSize, xdim + size);
-
-        // Shared memory for storing the buffer
-        extern __shared__ float buffer[];
-
-        // Load data into shared memory
-        int bufferIdx = threadIdx.x + size;
-        int imageIdx = k * xdim + chunkStart + threadIdx.x - size;
-        if (imageIdx >= 0 && imageIdx < k * xdim + chunkEnd) {
-            buffer[bufferIdx] = I[imageIdx];
+        for (i = 0, j = bdx; i < size; i++, j++) {
+            buffer[i] = I[k * xdim + size - i];
+            buffer[j] = I[k * xdim + xdim - i - 1];
         }
 
-        __syncthreads();
-
-        // Compute convolution for this chunk
-        for (int i = threadIdx.x + chunkStart + size; i < chunkEnd; i += blockDim.x) {
+        for (i = size; i < bdx; i++) {
             float sum = B[0] * buffer[i];
-            for (int j = 1; j < size; ++j) {
+            for (j = 1; j < size; j++)
                 sum += B[j] * (buffer[i - j] + buffer[i + j]);
-            }
             output[k * xdim + i - size] = sum;
         }
-
-        __syncthreads();
     }
 }
 
 
-__global__ void columnConvolution(const float* I, float* output, const float* B, const int* xDim, const int* yDim, int size) {
-   int k = blockIdx.x;  // Each block handles a single column of the input image
+__global__ void columnConvolution(const float* I, float* output, const float* B, const int* xDim, const int* yDim, int size, float* buffer) {
+    int k = blockIdx.y * blockDim.y + threadIdx.y; // Row index
+	const int xdim{xDim[0]}, ydim{yDim[0]};
+    const int bdy = ydim + size;
 
-	const int xdim{*xDim}, ydim{*yDim};
-    // Iterate over chunks of the column to fit within shared memory constraints
-    int chunkSize = min(MAX_SHARED_SIZE, ydim + size);
-    int numChunks = (ydim + size + chunkSize - 1) / chunkSize;
+	if (k < xdim) {
+        int i, j;
+        for (i = size; i < bdy; i++)
+            buffer[i] = I[(i - size) * xdim + k];
 
-    for (int chunk = 0; chunk < numChunks; ++chunk) {
-        int chunkStart = chunk * chunkSize;
-        int chunkEnd = min(chunkStart + chunkSize, ydim + size);
-
-        // Shared memory for storing the buffer
-        extern __shared__ float buffer[];
-
-        // Load data into shared memory
-        int bufferIdx = threadIdx.x + size;
-        int imageIdx = (chunkStart + threadIdx.x - size) * xdim + k;
-        if (imageIdx >= 0 && imageIdx < (chunkEnd * xdim) + k) {
-            buffer[bufferIdx] = I[imageIdx];
+        for (i = 0, j = bdy; i < size; i++, j++) {
+            buffer[i] = I[(size - i) * xdim + k];
+            buffer[j] = I[(ydim - i - 1) * xdim + k];
         }
 
-        __syncthreads();
-
-        // Compute convolution for this chunk
-        for (int i = threadIdx.x + chunkStart + size; i < chunkEnd; i += blockDim.x) {
-            float sum = B[0] * buffer[i];
-            for (int j = 1; j < size; ++j) {
+        for (i = size; i < bdy; i++) {
+            double sum = B[0] * buffer[i];
+            for (j = 1; j < size; j++)
                 sum += B[j] * (buffer[i - j] + buffer[i + j]);
-            }
             output[(i - size) * xdim + k] = sum;
         }
-
-        __syncthreads();
     }
 }
 

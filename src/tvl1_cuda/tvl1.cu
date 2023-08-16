@@ -137,9 +137,9 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 
 	// pre-smooth the original images
 	try {
-		gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
+		gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, _I1w, &_handle);
 		cudaDeviceSynchronize();
-		gaussian(_I1s, _B, _nx, _ny, PRESMOOTHING_SIGMA, &_handle);
+		gaussian(_I1s, _B, _nx, _ny, PRESMOOTHING_SIGMA, _I1w, &_handle);
 		cudaDeviceSynchronize();
 	}
 	catch(const std::exception& e) { throw; }
@@ -152,9 +152,9 @@ void TV_L1::runDualTVL1Multiscale(const float *I0, const float *I1) {
 
 		// zoom in the images to create the pyramidal structure
 		try {
-			zoomOut(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+			zoomOut(_I0s + (s-1)*size, _I0s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, _I1wx, &_handle);
 			cudaDeviceSynchronize();
-			zoomOut(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, &_handle);
+			zoomOut(_I1s + (s-1)*size, _I1s + (s*size), _B, _nx + (s-1), _ny + (s-1), _nxy, _nxy + 1, _zfactor, _I1w, _I1wx, &_handle);
 			cudaDeviceSynchronize();
 		}
 		catch(const std::exception& e) { throw; }
@@ -295,11 +295,11 @@ void TV_L1::imageNormalization(
 	cudaDeviceSynchronize();
 
 	// obtain the max and min of both images
-	int max0, max1, min0, min1;
-	cudaMemcpy(&max0, I0 + iMax0, sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&max1, I1 + iMax1, sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&min0, I0 + iMin0, sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(&min1, I1 + iMin1, sizeof(float), cudaMemcpyDeviceToHost);
+	float max0, max1, min0, min1;
+	cudaMemcpy(&max0, I0 + iMax0-1, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&max1, I1 + iMax1-1, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&min0, I0 + iMin0-1, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&min1, I1 + iMin1-1, sizeof(float), cudaMemcpyDeviceToHost);
 	cudaDeviceSynchronize();
 
 	const float max = std::max(max0, max1);
@@ -431,6 +431,7 @@ void TV_L1::gaussian(
 	const int* xdim,       // image width
 	const int* ydim,       // image height
 	const double sigma,    // Gaussian sigma
+	float* buffer,
 	cublasHandle_t* handle
 )
 {
@@ -448,8 +449,8 @@ void TV_L1::gaussian(
 	}
 
 	// compute the coefficients of the 1D convolution kernel
-	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
-	const int threads = (blocks == 1) ? size : THREADS_PER_BLOCK;
+	int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = (blocks == 1) ? size : THREADS_PER_BLOCK;
 	convolution1D<<<blocks, threads>>>(B, size, sPi, den);
 	cudaDeviceSynchronize();
 
@@ -463,17 +464,16 @@ void TV_L1::gaussian(
 	cublasSscal(*handle, size, &norm, B, 1);
 	cudaDeviceSynchronize();
 
-    // Adjust shared memory size based on the new approach
-    int chunkSize = std::min(MAX_SHARED_SIZE, hXdim + size);
-    int sharedMemorySize = chunkSize * sizeof(float);
+	blocks = hYdim / THREADS_PER_BLOCK + (hYdim % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = (blocks == 1) ? hYdim : THREADS_PER_BLOCK;
 	// convolution of each line of the input image
-    lineConvolution<<<hYdim, THREADS_PER_BLOCK, sharedMemorySize>>>(I, I, B, xdim, ydim, size);
+    lineConvolution<<<blocks, threads>>>(I, I, B, xdim, ydim, size, buffer);
 	cudaDeviceSynchronize();
 
-    chunkSize = std::min(MAX_SHARED_SIZE, hYdim + size);
-    sharedMemorySize = chunkSize * sizeof(float);
+	blocks = hXdim / THREADS_PER_BLOCK + (hXdim % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = (blocks == 1) ? hXdim : THREADS_PER_BLOCK;
 	// convolution of each column of the input image
-    columnConvolution<<<hXdim, THREADS_PER_BLOCK, sharedMemorySize>>>(I, I, B, xdim, ydim, size);
+    columnConvolution<<<blocks, threads>>>(I, I, B, xdim, ydim, size, buffer);
 	cudaDeviceSynchronize();
 }
 
@@ -491,6 +491,7 @@ void TV_L1::zoomOut(
 	int* nyy,
 	const float factor, // zoom factor between 0 and 1
 	float* Is,           // temporary working image
+	float* gaussBuffer,
 	cublasHandle_t* handle
 )
 {
@@ -513,7 +514,7 @@ void TV_L1::zoomOut(
 
 	// pre-smooth the image
 	cudaDeviceSynchronize();
-	try { gaussian(Is, B, nx, ny, sigma, handle); }
+	try { gaussian(Is, B, nx, ny, sigma, gaussBuffer, handle); }
 	catch(const std::exception& e) { throw; }
 
 	// re-sample the image using bicubic interpolation

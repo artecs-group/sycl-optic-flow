@@ -21,12 +21,12 @@ public:
 private:
     void dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny);
     void imageNormalization(const float *I0, const float *I1, float* I0n, float* I1n, int size);
-    void zoomOut(const float *I, float *Iout, float* B, const int* nx, const int* ny, int* nxx, int* nyy, const float factor, float* Is, cublasHandle_t* handle);
+    void zoomOut(const float *I, float *Iout, float* B, const int* nx, const int* ny, int* nxx, int* nyy, const float factor, float* Is, float* gaussBuffer, cublasHandle_t* handle);
     void zoomIn(const float *I, float *Iout, const int* nx, const int* ny, const int* nxx, const int* nyy);
     void divergence(const float *v1, const float *v2, float *div, const int nx, const int ny);
     void forwardGradient(const float *f, float *fx, float *fy, const int nx, const int ny);
     void centeredGradient(const float* input, float *dx, float *dy, const int nx, const int ny);
-    void gaussian(float *I, float* B, const int* xdim, const int* ydim, const double sigma, cublasHandle_t* handle);
+    void gaussian(float *I, float* B, const int* xdim, const int* ydim, const double sigma, float* buffer, cublasHandle_t* handle);
 
     cublasHandle_t _handle;
 

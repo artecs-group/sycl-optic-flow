@@ -171,7 +171,7 @@ int App::run() {
             }
             try {
                 tvl1.runDualTVL1Multiscale(I0, I1);
-                // flowToColor(width, height, tvl1.getU(), m_frameGray);
+                flowToColor(width, height, tvl1.getU(), m_frameGray);
             }
             catch(const std::exception& e) {
                 std::cerr << e.what() << '\n';

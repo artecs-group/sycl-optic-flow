@@ -246,8 +246,8 @@ __global__ void zoomSize(
 {
 	//compute the new size corresponding to factor
 	//we add 0.5 for rounding off to the closest number
-	*nxx = (int)((float) *nx * factor + 0.5);
-	*nyy = (int)((float) *ny * factor + 0.5);
+	*nxx = (int)(*nx * factor + 0.5);
+	*nyy = (int)(*ny * factor + 0.5);
 }
 
 

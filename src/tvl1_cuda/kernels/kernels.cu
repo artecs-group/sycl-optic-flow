@@ -131,7 +131,7 @@ __global__ void convolution1D(float* B, int size, float sPi, float den) {
 }
 
 
-__global__ void lineConvolution(const float *I, float *output, const float *B, const int* xDim, const int* yDim, int size, float* buffer) {
+__global__ void lineConvolution(float *I, const float *B, const int* xDim, const int* yDim, int size, float* buffer) {
 	int k = blockIdx.y * blockDim.y + threadIdx.y; // Row index
 	const int xdim{xDim[0]}, ydim{yDim[0]};
     const int bdx = xdim + size;
@@ -150,13 +150,13 @@ __global__ void lineConvolution(const float *I, float *output, const float *B, c
             float sum = B[0] * buffer[i];
             for (j = 1; j < size; j++)
                 sum += B[j] * (buffer[i - j] + buffer[i + j]);
-            output[k * xdim + i - size] = sum;
+            I[k * xdim + i - size] = sum;
         }
     }
 }
 
 
-__global__ void columnConvolution(const float* I, float* output, const float* B, const int* xDim, const int* yDim, int size, float* buffer) {
+__global__ void columnConvolution(float* I, const float* B, const int* xDim, const int* yDim, int size, float* buffer) {
     int k = blockIdx.y * blockDim.y + threadIdx.y; // Row index
 	const int xdim{xDim[0]}, ydim{yDim[0]};
     const int bdy = ydim + size;
@@ -172,10 +172,10 @@ __global__ void columnConvolution(const float* I, float* output, const float* B,
         }
 
         for (i = size; i < bdy; i++) {
-            double sum = B[0] * buffer[i];
+            float sum = B[0] * buffer[i];
             for (j = 1; j < size; j++)
                 sum += B[j] * (buffer[i - j] + buffer[i + j]);
-            output[(i - size) * xdim + k] = sum;
+            I[(i - size) * xdim + k] = sum;
         }
     }
 }
@@ -228,7 +228,7 @@ __global__ void zoomSize(
 /**
  * Neumann boundary condition test
 **/
-__device__ inline int neumann_bc(int x, int nx, bool *out) {
+__device__ inline int neumann_bc(int x, int nx, bool* out) {
 	*out = (x < 0) || (x >= nx);
 	x = max(x, 0);
 	return min(x, nx-1);
@@ -322,7 +322,7 @@ __global__ void bicubicInterpolationWarp(
 	int    nx,        // image width
 	int    ny,        // image height
 	bool border_out // if true, put zeros outside the region
-) 
+)
 {
 	const int j = blockIdx.x * blockDim.x + threadIdx.x;
 	const int i = blockIdx.y * blockDim.y + threadIdx.y;
@@ -337,14 +337,16 @@ __global__ void bicubicInterpolationWarp(
 
 
 __global__ void calculateRhoGrad(const float* I1wx, const float* I1wy, const float* I1w,
-	const float* u1, const float* u2, const float* I0, float* grad, float* rho_c)
+	const float* u1, const float* u2, const float* I0, float* grad, float* rho_c, int size)
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-	// store the |Grad(I1)|^2
-	grad[i] = (I1wx[i] * I1wx[i]) + (I1wy[i] * I1wy[i]);
-	// compute the constant part of the rho function
-	rho_c[i] = (I1w[i] - I1wx[i] * u1[i] - I1wy[i] * u2[i] - I0[i]);
+	if(i < size) {
+		// store the |Grad(I1)|^2
+		grad[i] = (I1wx[i] * I1wx[i]) + (I1wy[i] * I1wy[i]);
+		// compute the constant part of the rho function
+		rho_c[i] = (I1w[i] - I1wx[i] * u1[i] - I1wy[i] * u2[i] - I0[i]);
+	}
 }
 
 
@@ -353,31 +355,30 @@ __global__ void estimateThreshold(const float* rho_c, const float* I1wx, const f
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-	if(i >= size)
-		return;
+	if(i < size) {
+		const float rho = rho_c[i] + (I1wx[i] * u1[i] + I1wy[i] * u2[i]);
+		const float fi{-rho/grad[i]};
+		const bool c1{rho >= -lT * grad[i]};
+		const bool c2{rho > lT * grad[i]};
+		const bool c3{grad[i] < GRAD_IS_ZERO};
+		float d1{lT * I1wx[i]}; 
+		float d2{lT * I1wy[i]};
 
-	const float rho = rho_c[i] + (I1wx[i] * u1[i] + I1wy[i] * u2[i]);
-	const float fi{-rho/grad[i]};
-	const bool c1{rho >= -lT * grad[i]};
-	const bool c2{rho > lT * grad[i]};
-	const bool c3{grad[i] < GRAD_IS_ZERO};
-	float d1{lT * I1wx[i]}; 
-	float d2{lT * I1wy[i]};
+		if(c1) {
+			d1 = fi * I1wx[i];
+			d2 = fi * I1wy[i];
 
-	if(c1) {
-		d1 = fi * I1wx[i];
-		d2 = fi * I1wy[i];
-
-		if(c2) {
-			d1 = -lT * I1wx[i];
-			d2 = -lT * I1wy[i];
+			if(c2) {
+				d1 = -lT * I1wx[i];
+				d2 = -lT * I1wy[i];
+			}
+			else if(c3)
+				d1 = d2 = 0.0f;
 		}
-		else if(c3)
-			d1 = d2 = 0.0f;
-	}
 
-	v1[i] = u1[i] + d1;
-	v2[i] = u2[i] + d2;
+		v1[i] = u1[i] + d1;
+		v2[i] = u2[i] + d2;
+	}
 }
 
 
@@ -386,7 +387,7 @@ __global__ void estimateOpticalFlow(float* u1, float* u2, const float* v1, const
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-	if(i < size){		
+	if(i < size) {		
 		const float u1k = u1[i];
 		const float u2k = u2[i];
 

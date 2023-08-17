@@ -26,7 +26,7 @@ private:
     void divergence(const float *v1, const float *v2, float *div, const int nx, const int ny);
     void forwardGradient(const float *f, float *fx, float *fy, const int nx, const int ny);
     void centeredGradient(const float* input, float *dx, float *dy, const int nx, const int ny);
-    void gaussian(float *I, float* B, const int* xdim, const int* ydim, const double sigma, float* buffer, cublasHandle_t* handle);
+    void gaussian(float *I, float* B, const int* xdim, const int* ydim, float sigma, float* buffer, cublasHandle_t* handle);
 
     cublasHandle_t _handle;
 

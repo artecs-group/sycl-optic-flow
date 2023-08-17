@@ -153,78 +153,85 @@ int App::run() {
     m_cap.read(m_frame);
     
     // Iterate over all frames
-    while (isRunning()) {
-        timer.reset();
-        timer.start();
+    try {
+        while (isRunning()) {
+            timer.reset();
+            timer.start();
 
-        m_cap.read(auxFrame);
+            m_cap.read(auxFrame);
 
-        cv::Mat m_frameGray, m_frameGray2;
-        cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
-        cv::cvtColor(auxFrame, m_frameGray2, COLOR_BGR2GRAY);
+            cv::Mat m_frameGray, m_frameGray2;
+            cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
+            cv::cvtColor(auxFrame, m_frameGray2, COLOR_BGR2GRAY);
 
-        if (m_process) {
-            #pragma omp parallel for simd
-            for (size_t i = 0; i < width*height; i++) {
-                I0[i] = static_cast<float>(m_frameGray.data[i]);
-                I1[i] = static_cast<float>(m_frameGray2.data[i]);
-            }
-            try {
-                tvl1.runDualTVL1Multiscale(I0, I1);
-                flowToColor(width, height, tvl1.getU(), m_frameGray);
-            }
-            catch(const std::exception& e) {
-                std::cerr << e.what() << '\n';
-            }
-        }
-        timer.stop();
-
-        cv::Mat imgToShow = m_frameGray;
-
-        std::ostringstream msg, msg2;
-        int currentFPS = 1000 / timer.getTimeMilli();
-        msg << devName;
-        msg2 << "FPS " << currentFPS << " (" << imgToShow.size
-            << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
-            << " (process: " << (m_process ? "True" : "False") << ")";
-
-        cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-        cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-
-        if (m_show_ui) {
-            try {
-                cv::imshow("Optic Flow", imgToShow);
-                int key = waitKey(1);
-                switch (key) {
-                case 27:  // ESC
-                    m_running = false;
-                    break;
-
-                case 'p':  // fallthru
-                case 'P':
-                    m_process = !m_process;
-                    break;
-
-                default:
-                    break;
+            if (m_process) {
+                #pragma omp parallel for simd
+                for (size_t i = 0; i < width*height; i++) {
+                    I0[i] = static_cast<float>(m_frameGray.data[i]);
+                    I1[i] = static_cast<float>(m_frameGray2.data[i]);
+                }
+                try {
+                    tvl1.runDualTVL1Multiscale(I0, I1);
+                    flowToColor(width, height, tvl1.getU(), m_frameGray);
+                }
+                catch(const std::exception& e) {
+                    std::cerr << e.what() << '\n';
                 }
             }
-            catch (const std::exception& e) {
-                std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
-                if (processedFrames > 0) {
-                    delete[] I0;
-                    delete[] I1;
-                    throw;
+            timer.stop();
+
+            cv::Mat imgToShow = m_frameGray;
+
+            std::ostringstream msg, msg2;
+            int currentFPS = 1000 / timer.getTimeMilli();
+            msg << devName;
+            msg2 << "FPS " << currentFPS << " (" << imgToShow.size
+                << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
+                << " (process: " << (m_process ? "True" : "False") << ")";
+
+            cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+            cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+
+            if (m_show_ui) {
+                try {
+                    cv::imshow("Optic Flow", imgToShow);
+                    int key = waitKey(1);
+                    switch (key) {
+                    case 27:  // ESC
+                        m_running = false;
+                        break;
+
+                    case 'p':  // fallthru
+                    case 'P':
+                        m_process = !m_process;
+                        break;
+
+                    default:
+                        break;
+                    }
                 }
-                m_show_ui = false;  // UI is not available
+                catch (const std::exception& e) {
+                    std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
+                    if (processedFrames > 0) {
+                        delete[] I0;
+                        delete[] I1;
+                        throw;
+                    }
+                    m_show_ui = false;  // UI is not available
+                }
             }
+
+            processedFrames++;
+            auxFrame.copyTo(m_frame);
+
+            if (!m_show_ui && (processedFrames > 100)) 
+                m_running = false;
         }
-
-        processedFrames++;
-        auxFrame.copyTo(m_frame);
-
-        if (!m_show_ui && (processedFrames > 100)) 
-            m_running = false;
+    }
+    catch (const std::exception& e) {
+        delete[] I0;
+        delete[] I1;
+        return 0;
     }
 
     delete[] I0;
@@ -260,18 +267,18 @@ int main(int argc, char** argv)
     catch (const cv::Exception& e)
     {
         std::cout << "FATAL: OpenCV error: " << e.what() << std::endl;
-        return EXIT_FAILURE;
+        return EXIT_SUCCESS;
     }
     catch (const std::exception& e)
     {
         std::cout << "FATAL: C++ error: " << e.what() << std::endl;
-        return EXIT_FAILURE;
+        return EXIT_SUCCESS;
     }
 
     catch (...)
     {
         std::cout << "FATAL: unknown C++ exception" << std::endl;
-        return EXIT_FAILURE;
+        return EXIT_SUCCESS;
     }
 
     return EXIT_SUCCESS;

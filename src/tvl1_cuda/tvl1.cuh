@@ -16,7 +16,7 @@ public:
         float epsilon=0.01);
     ~TV_L1();
     const float* getU() { return _hostU; };
-    void runDualTVL1Multiscale(const float *I0, const float *I1);
+    void runDualTVL1Multiscale(const float* I);
 
 private:
     void dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny);
@@ -32,7 +32,7 @@ private:
 
     float* _hostU;
 
-	float *_I0s, *_I1s, *_u1s, *_u2s;
+	float *_I0s, *_I1s, *_u1s, *_u2s, *_imBuffer;
 	int *_nx, *_ny, *_nxy, *_hNx, *_hNy;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 

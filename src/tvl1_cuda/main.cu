@@ -139,18 +139,10 @@ int App::run() {
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
     // buffers required for the image proccesing
-    float* I0 = new float[width * height]{0};
-    float* I1 = new float[width * height]{0};
-
+    float* img = new float[width * height]{0};
     TV_L1 tvl1 = TV_L1(width, height);
-
     int processedFrames = 0;
-
-    cv::Mat auxFrame;
     cv::TickMeter timer;
-
-    // get first frame
-    m_cap.read(m_frame);
     
     // Iterate over all frames
     try {
@@ -158,20 +150,18 @@ int App::run() {
             timer.reset();
             timer.start();
 
-            m_cap.read(auxFrame);
+            m_cap.read(m_frame);
 
-            cv::Mat m_frameGray, m_frameGray2;
+            cv::Mat m_frameGray;
             cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
-            cv::cvtColor(auxFrame, m_frameGray2, COLOR_BGR2GRAY);
 
             if (m_process) {
                 #pragma omp parallel for simd
                 for (size_t i = 0; i < width*height; i++) {
-                    I0[i] = static_cast<float>(m_frameGray.data[i]);
-                    I1[i] = static_cast<float>(m_frameGray2.data[i]);
+                    img[i] = static_cast<float>(m_frameGray.data[i]);
                 }
                 try {
-                    tvl1.runDualTVL1Multiscale(I0, I1);
+                    tvl1.runDualTVL1Multiscale(img);
                     flowToColor(width, height, tvl1.getU(), m_frameGray);
                 }
                 catch(const std::exception& e) {
@@ -213,8 +203,7 @@ int App::run() {
                 catch (const std::exception& e) {
                     std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
                     if (processedFrames > 0) {
-                        delete[] I0;
-                        delete[] I1;
+                        delete[] img;
                         throw;
                     }
                     m_show_ui = false;  // UI is not available
@@ -222,20 +211,17 @@ int App::run() {
             }
 
             processedFrames++;
-            auxFrame.copyTo(m_frame);
 
             if (!m_show_ui && (processedFrames > 100)) 
                 m_running = false;
         }
     }
     catch (const std::exception& e) {
-        delete[] I0;
-        delete[] I1;
+        delete[] img;
         return 0;
     }
 
-    delete[] I0;
-    delete[] I1;
+    delete[] img;
     return 0;
 }
 

@@ -29,8 +29,6 @@ endif()
 
 set(THREADS_PER_BLOCK_DEFAULT 128 CACHE STRING "Default number of threads per block")
 set(THREADS_PER_BLOCK ${THREADS_PER_BLOCK_DEFAULT} CACHE STRING "Number of threads per block")
-set(MAX_SHARED_SIZE_DEFAULT 8 CACHE STRING "Default size of the shared buffer")
-set(MAX_SHARED_SIZE ${MAX_SHARED_SIZE_DEFAULT} CACHE STRING "Size of the shared buffer")
 
 find_package(CUDAToolkit REQUIRED)
 find_library(CUBLAS_LIBRARY cublas)
@@ -39,7 +37,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source} ${Headers})
 
 set(CXXFLAGS "-O3" "-lcublas" "-fopenmp" ${EXTRA_FLAGS})
-add_compile_definitions(THREADS_PER_BLOCK=${THREADS_PER_BLOCK} MAX_SHARED_SIZE=${MAX_SHARED_SIZE})
+add_compile_definitions(THREADS_PER_BLOCK=${THREADS_PER_BLOCK})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})
 target_link_directories(${This} PRIVATE)
 target_link_libraries(${This} ${OpenCV_LIBS} ${CUBLAS_LIBRARY} ${CXXFLAGS})

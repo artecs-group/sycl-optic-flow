@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cublas_v2.h>
 
-constexpr size_t MAX_ITERATIONS{300};
+constexpr size_t MAX_ITERATIONS{10};
 constexpr float PRESMOOTHING_SIGMA{0.8f};
 constexpr float ZOOM_SIGMA_ZERO{0.6};
 constexpr size_t DEFAULT_GAUSSIAN_WINDOW_SIZE{5};

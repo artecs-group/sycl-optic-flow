@@ -5,7 +5,7 @@
 
 
 __global__ void bodyDivergence(const float* v1, const float* v2, float* div, int nx, int ny){
-	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + nx + 1;
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
 	if(i < (nx-1)*(ny-1)){
 		div[i]  = (v1[i] - v1[i-1]) + (v2[i] - v2[i-nx]);
 	}
@@ -75,7 +75,7 @@ __global__ void columnsForwardGradient(const float* f, float* fx, float* fy, siz
 
 
 __global__ void bodyGradient(const float* input, float* dx, float* dy, int nx, int ny){
-	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + nx + 1;
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
 	if(i < (nx-1)*(ny-1)){
 		dx[i] = 0.5*(input[i+1] - input[i-1]);
 		dy[i] = 0.5*(input[i+nx] - input[i-nx]);
@@ -183,8 +183,8 @@ __global__ void columnConvolution(float* I, const float* B, const int* xDim, con
 
 __global__ void bicubicResample(const float* Is, float *Iout, const int* nxx, const int* nyy, 
 	const int* nx, const int* ny, float factor){
-    const int j = blockIdx.x * blockDim.x + threadIdx.x;
-    const int i = blockIdx.y * blockDim.y + threadIdx.y;
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int j = blockIdx.y * blockDim.y + threadIdx.y;
 	const float ii = (float)i / factor;
 	const float jj = (float)j / factor;
 
@@ -196,8 +196,8 @@ __global__ void bicubicResample(const float* Is, float *Iout, const int* nxx, co
 
 __global__ void bicubicResample2(const float* Is, float *Iout, const int* nxx, const int* nyy, 
 	const int* nx, const int* ny){
-    const int j = blockIdx.x * blockDim.x + threadIdx.x;
-    const int i = blockIdx.y * blockDim.y + threadIdx.y;
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int j = blockIdx.y * blockDim.y + threadIdx.y;
 	const float ii = (float)i / ((float)*nyy / *ny);
 	const float jj = (float)j / ((float)*nxx / *nx);
 
@@ -324,15 +324,16 @@ __global__ void bicubicInterpolationWarp(
 	bool border_out // if true, put zeros outside the region
 )
 {
-	const int j = blockIdx.x * blockDim.x + threadIdx.x;
-	const int i = blockIdx.y * blockDim.y + threadIdx.y;
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+	const int j = blockIdx.y * blockDim.y + threadIdx.y;
 	const int p = i * nx + j;
-	const float uu = j + u[p];
-	const float vv = i + v[p];
 
 	// obtain the bicubic interpolation at position (uu, vv)
-	if(p < nx*ny)
+	if(p < nx*ny){
+		const float uu = j + u[p];
+		const float vv = i + v[p];
 		output[p] = bicubicInterpolationAt(input, uu, vv, nx, ny, border_out);
+	}
 }
 
 

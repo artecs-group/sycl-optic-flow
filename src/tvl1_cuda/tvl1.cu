@@ -201,8 +201,8 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 	cudaMemsetAsync(_p22, 0.0f, size * sizeof(float));
 
 	const size_t TH2{THREADS_PER_BLOCK/4};
-	dim3 blocks(nx / TH2 + (nx % TH2 == 0 ? 0:1), ny / TH2 + (ny % TH2 == 0 ? 0:1));
-	dim3 threads(blocks.x == 1 ? nx:TH2, blocks.y == 1 ? ny:TH2);
+	dim3 blocks(ny / TH2 + (ny % TH2 == 0 ? 0:1), nx / TH2 + (nx % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? ny:TH2, blocks.y == 1 ? nx:TH2);
 
 	const size_t blocks1 = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
 	const size_t threads1 = blocks1 == 1 ? size:THREADS_PER_BLOCK;
@@ -306,18 +306,18 @@ void TV_L1::divergence(
 )
 {
 	// compute the divergence on the central body of the image
-	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
-	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	int blocks = ((nx-1)*(ny-1) - 1) / THREADS_PER_BLOCK + (((nx-1)*(ny-1) - 1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? ((nx-1)*(ny-1) - 1) : THREADS_PER_BLOCK;
 	bodyDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
 
 	// compute the divergence on the first and last rows
-	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
-	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	blocks = (nx-2) / THREADS_PER_BLOCK + ((nx-2) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-2) : THREADS_PER_BLOCK;
 	edgeRowsDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
 
 	// compute the divergence on the first and last columns
-	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
-	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	blocks = (ny-2) / THREADS_PER_BLOCK + ((ny-2) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-2) : THREADS_PER_BLOCK;
 	edgeColumnsDivergence<<<blocks,threads>>>(v1, v2, div, nx, ny);
 
 	cornersDivergence<<<1,1>>>(v1, v2, div, nx, ny);
@@ -368,18 +368,18 @@ void TV_L1::centeredGradient(
 		)
 {
 	// compute the gradient on the center body of the image
-	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
-	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
+	int blocks = ((nx-1)*(ny-1) - 1) / THREADS_PER_BLOCK + (((nx-1)*(ny-1) - 1) % THREADS_PER_BLOCK == 0 ? 0:1);
+	int threads = blocks == 1 ? ((nx-1)*(ny-1) - 1) : THREADS_PER_BLOCK;
 	bodyGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
 
 	// compute the gradient on the first and last rows
-	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
-	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
+	blocks = (nx-2) / THREADS_PER_BLOCK + ((nx-2) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (nx-2) : THREADS_PER_BLOCK;
 	edgeRowsGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
 
 	// compute the gradient on the first and last columns
-	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
-	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
+	blocks = (ny-2) / THREADS_PER_BLOCK + ((ny-2) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = blocks == 1 ? (ny-2) : THREADS_PER_BLOCK;
 	edgeColumnsGradient<<<blocks,threads>>>(input, dx, dy, nx, ny);
 
 	// compute the gradient at the four corners
@@ -474,8 +474,8 @@ void TV_L1::zoomOut(
 
 	// re-sample the image using bicubic interpolation
 	const size_t TH2{THREADS_PER_BLOCK/4};
-	dim3 blocks(sx / TH2 + (sx % TH2 == 0 ? 0:1), sy / TH2 + (sy % TH2 == 0 ? 0:1));
-	dim3 threads(blocks.x == 1 ? sx:TH2, blocks.y == 1 ? sy:TH2);
+	dim3 blocks(sy / TH2 + (sy % TH2 == 0 ? 0:1), sx / TH2 + (sx % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? sy:TH2, blocks.y == 1 ? sx:TH2);
 	bicubicResample<<<blocks, threads>>>(Is, Iout, nxx, nyy, nx, ny, factor);
 }
 
@@ -498,7 +498,7 @@ void TV_L1::zoomIn(
 
 	// re-sample the image using bicubic interpolation	
 	const size_t TH2{THREADS_PER_BLOCK/4};
-	dim3 blocks(sx / TH2 + (sx % TH2 == 0 ? 0:1), sy / TH2 + (sy % TH2 == 0 ? 0:1));
-	dim3 threads(blocks.x == 1 ? sx:TH2, blocks.y == 1 ? sy:TH2);
+	dim3 blocks(sy / TH2 + (sy % TH2 == 0 ? 0:1), sx / TH2 + (sx % TH2 == 0 ? 0:1));
+	dim3 threads(blocks.x == 1 ? sy:TH2, blocks.y == 1 ? sx:TH2);
 	bicubicResample2<<<blocks, threads>>>(I, Iout, nxx, nyy, nx, ny);
 }

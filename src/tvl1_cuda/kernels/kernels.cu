@@ -426,7 +426,7 @@ __global__ void divideByG(const float* g1, const float* g2, size_t size, float* 
 }
 
 
-__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size) {
+__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, float min, float den, int size) {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 	
 	if(i < size) {

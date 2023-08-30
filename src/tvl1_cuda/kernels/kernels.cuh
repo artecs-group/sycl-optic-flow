@@ -31,7 +31,7 @@ __global__ void bicubicResample2(const float* Is, float *Iout, const int* nxx, c
 __device__ float bicubicInterpolationAt(const float* input, float uu, float vv, int nx, int ny, bool border_out);
 __global__ void bicubicInterpolationWarp(const float* input, const float *u, const float *v, float *output, int nx, int ny, bool border_out);
 
-__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, int min, int den, int size);
+__global__ void normKernel(const float* __restrict__ I0, const float* __restrict__ I1, float* __restrict__ I0n, float* __restrict__ I1n, float min, float den, int size);
 __global__ void calculateRhoGrad(const float* I1wx, const float* I1wy, const float* I1w, const float* u1, const float* u2, const float* I0, float* grad, float* rho_c, int size);
 __global__ void estimateThreshold(const float* rho_c, const float* I1wx, const float* u1, const float* I1wy, const float* u2, const float* grad, float lT, size_t size, float* v1, float* v2);
 __global__ void estimateOpticalFlow(float* u1, float* u2, const float* v1, const float* v2, const float* div_p1, const float* div_p2, float theta, size_t size, float* error);

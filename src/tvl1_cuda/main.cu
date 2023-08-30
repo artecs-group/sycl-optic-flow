@@ -2,6 +2,8 @@
 #include <cmath>
 #include <iostream>
 
+#include <cuda_fp16.h>
+
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/videoio.hpp>
@@ -78,7 +80,7 @@ void App::initVideoSource()
 } // initVideoSource()
 
 
-void App::flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame) {
+void App::flowToColor(int width, int height, const __half2* flowData, cv::Mat& outFrame) {
     cv::Mat flow_magnitude(height, width, CV_32F);
     cv::Mat flow_angle(height, width, CV_32F);
 
@@ -88,8 +90,8 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
         #pragma omp simd
         for (int x = 0; x < width; ++x) {
             int index = y * width + x;
-            float u = flowData[index];
-            float v = flowData[index + width * height];
+            float u = __high2float(flowData[index]);
+            float v = __high2float(flowData[index + width * height]);
             flow_magnitude.at<float>(y, x) = std::sqrt(u * u + v * v);
             flow_angle.at<float>(y, x) = std::atan2(v, u);
         }
@@ -139,7 +141,7 @@ int App::run() {
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
     // buffers required for the image proccesing
-    float* img = new float[width * height]{0};
+    __half2* img = new __half2[width * height]{0};
     TV_L1 tvl1 = TV_L1(width, height);
     int processedFrames = 0;
     cv::TickMeter timer;
@@ -158,7 +160,7 @@ int App::run() {
             if (m_process) {
                 #pragma omp parallel for simd
                 for (size_t i = 0; i < width*height; i++) {
-                    img[i] = static_cast<float>(m_frameGray.data[i]);
+                    img[i] = __float2half2_rn(static_cast<float>(m_frameGray.data[i]));
                 }
                 try {
                     tvl1.runDualTVL1Multiscale(img);

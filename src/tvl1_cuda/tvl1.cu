@@ -25,12 +25,12 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 {
 	_width = width;
 	_height = height;
-	_tau = tau;
-	_lambda = lambda;
-	_theta = theta;
+	_tau = __float2half2_rn(tau);
+	_lambda = __float2half2_rn(lambda);
+	_theta = __float2half2_rn(theta);
 	_warps = warps;
-	_epsilon = epsilon;
-	_zfactor = zfactor;
+	_epsilon = __float2half2_rn(epsilon);
+	_zfactor = __float2half2_rn(zfactor);
 
     //Set the number of scales according to the size of the
     //images.  The value N is computed to assure that the smaller
@@ -38,45 +38,45 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
 	_nscales = (N < nscales) ? N : nscales;
 
-	_hostU = new float[2 * _width*_height];
+	_hostU = new __half2[2 * _width*_height];
 	_hNx   = new int[_nscales];
 	_hNy   = new int[_nscales];
 
 	cublasCreate(&_handle);
 
 	// allocate memory for the pyramid structure
-	cudaMalloc(&_I0s, _nscales * _width * _height * sizeof(float));
-	cudaMalloc(&_I1s, _nscales * _width * _height * sizeof(float));
-	cudaMalloc(&_u1s, _nscales * _width * _height * sizeof(float));
-	cudaMalloc(&_u2s, _nscales * _width * _height * sizeof(float));
-	cudaMalloc(&_imBuffer, _width * _height * sizeof(float));
+	cudaMalloc(&_I0s, _nscales * _width * _height * sizeof(__half2));
+	cudaMalloc(&_I1s, _nscales * _width * _height * sizeof(__half2));
+	cudaMalloc(&_u1s, _nscales * _width * _height * sizeof(__half2));
+	cudaMalloc(&_u2s, _nscales * _width * _height * sizeof(__half2));
+	cudaMalloc(&_imBuffer, _width * _height * sizeof(__half2));
 	cudaMalloc(&_nx, _nscales * sizeof(int));
 	cudaMalloc(&_ny, _nscales * sizeof(int));
 	cudaMalloc(&_nxy, 2 * sizeof(int));
 
-	cudaMalloc(&_I1x, _width*_height * sizeof(float));
-	cudaMalloc(&_I1y, _width*_height * sizeof(float));
-	cudaMalloc(&_I1w, _width*_height * sizeof(float));
-	cudaMalloc(&_I1wx, _width*_height * sizeof(float));
-	cudaMalloc(&_I1wy, _width*_height * sizeof(float));
-	cudaMalloc(&_rho_c, _width*_height * sizeof(float));
-	cudaMalloc(&_v1, _width*_height * sizeof(float));
-	cudaMalloc(&_v2, _width*_height * sizeof(float));
-	cudaMalloc(&_p11, _width*_height * sizeof(float));
-	cudaMalloc(&_p12, _width*_height * sizeof(float));
-	cudaMalloc(&_p21, _width*_height * sizeof(float));
-	cudaMalloc(&_p22, _width*_height * sizeof(float));
-	cudaMalloc(&_grad, _width*_height * sizeof(float));
-	cudaMalloc(&_div_p1, _width*_height * sizeof(float));
-	cudaMalloc(&_div_p2, _width*_height * sizeof(float));
-	cudaMalloc(&_g1, _width*_height * sizeof(float));
-	cudaMalloc(&_g2, _width*_height * sizeof(float));
-	cudaMalloc(&_error, _width*_height * sizeof(float));
+	cudaMalloc(&_I1x, _width*_height * sizeof(__half2));
+	cudaMalloc(&_I1y, _width*_height * sizeof(__half2));
+	cudaMalloc(&_I1w, _width*_height * sizeof(__half2));
+	cudaMalloc(&_I1wx, _width*_height * sizeof(__half2));
+	cudaMalloc(&_I1wy, _width*_height * sizeof(__half2));
+	cudaMalloc(&_rho_c, _width*_height * sizeof(__half2));
+	cudaMalloc(&_v1, _width*_height * sizeof(__half2));
+	cudaMalloc(&_v2, _width*_height * sizeof(__half2));
+	cudaMalloc(&_p11, _width*_height * sizeof(__half2));
+	cudaMalloc(&_p12, _width*_height * sizeof(__half2));
+	cudaMalloc(&_p21, _width*_height * sizeof(__half2));
+	cudaMalloc(&_p22, _width*_height * sizeof(__half2));
+	cudaMalloc(&_grad, _width*_height * sizeof(__half2));
+	cudaMalloc(&_div_p1, _width*_height * sizeof(__half2));
+	cudaMalloc(&_div_p2, _width*_height * sizeof(__half2));
+	cudaMalloc(&_g1, _width*_height * sizeof(__half2));
+	cudaMalloc(&_g2, _width*_height * sizeof(__half2));
+	cudaMalloc(&_error, _width*_height * sizeof(__half2));
 
-	float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(_zfactor*_zfactor) - 1.0);
+	float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(zfactor*zfactor) - 1.0);
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
 	const int bSize = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
-	cudaMalloc(&_B,  bSize * sizeof(float));
+	cudaMalloc(&_B,  bSize * sizeof(__half2));
 }
 
 TV_L1::~TV_L1() {
@@ -119,29 +119,29 @@ TV_L1::~TV_L1() {
 /**
  * Function to compute the optical flow using multiple scales
  **/
-void TV_L1::runDualTVL1Multiscale(const float* I) {
+void TV_L1::runDualTVL1Multiscale(const __half2* I) {
 	const int size = _width * _height;
 
 	// swap image
-	cudaMemcpyAsync(_I0s, _imBuffer, size * sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpyAsync(_I0s, _imBuffer, size * sizeof(__half2), cudaMemcpyDeviceToDevice);
 
 	// send image to the device
-	cudaMemcpyAsync(_imBuffer, I, size * sizeof(float), cudaMemcpyHostToDevice);
-	cudaMemcpyAsync(_I1s, _imBuffer, size * sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpyAsync(_imBuffer, I, size * sizeof(__half2), cudaMemcpyHostToDevice);
+	cudaMemcpyAsync(_I1s, _imBuffer, size * sizeof(__half2), cudaMemcpyDeviceToDevice);
 
 	// setup initial values
 	cudaMemcpyAsync(_nx, &_width, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpyAsync(_ny, &_height, sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemsetAsync(_u1s + (_nscales-1 * size), 0.0f, size * sizeof(float));
-	cudaMemsetAsync(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(float));
+	cudaMemsetAsync(_u1s + (_nscales-1 * size), 0.0f, size * sizeof(__half2));
+	cudaMemsetAsync(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(__half2));
 
 	// normalize the images between 0 and 255
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
 
 	// pre-smooth the original images
 	try {
-		gaussian(_I0s, _B, _nx, _ny, PRESMOOTHING_SIGMA, _I1w, &_handle);
-		gaussian(_I1s, _B, _nx, _ny, PRESMOOTHING_SIGMA, _I1w, &_handle);
+		gaussian(_I0s, _B, _nx, _ny, __float2half2_rn(PRESMOOTHING_SIGMA), _I1w, &_handle);
+		gaussian(_I1s, _B, _nx, _ny, __float2half2_rn(PRESMOOTHING_SIGMA), _I1w, &_handle);
 	}
 	catch(const std::exception& e) { throw; }
 
@@ -160,7 +160,7 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 	cudaMemcpy(_hNx, _nx, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
 	cudaMemcpy(_hNy, _ny, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
 
-	const float invZfactor{1 / _zfactor};
+	const __half2 invZfactor{__float2half2_rn(1.0) / _zfactor};
 	// pyramidal structure for computing the optical flow
 	for (int s = _nscales-1; s > 0; s--) {
 		// compute the optical flow at the current scale
@@ -171,14 +171,14 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 		zoomIn(_u2s + (s*size), _u2s + (s-1)*size, _nx + s, _ny + s, _nx + (s-1), _ny + (s-1));
 
 		// scale the optical flow with the appropriate zoom factor
-		cublasSscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u1s + (s-1)*size, 1);
-		cublasSscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u2s + (s-1)*size, 1);
+		cublasHscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u1s + (s-1)*size, 1);
+		cublasHscal(_handle, _hNx[s-1] * _hNy[s-1], &invZfactor, _u2s + (s-1)*size, 1);
 	}
 	dualTVL1(_I0s, _I1s, _u1s, _u2s, _hNx[0], _hNy[0]);
 
 	// write back to the host the result
-	cudaMemcpy(_hostU, _u1s, size * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(_hostU + size, _u2s, size * sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(_hostU, _u1s, size * sizeof(__half2), cudaMemcpyDeviceToHost);
+	cudaMemcpy(_hostU + size, _u2s, size * sizeof(__half2), cudaMemcpyDeviceToHost);
 }
 
 
@@ -187,18 +187,18 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
  * Function to compute the optical flow in one scale
  *
  **/
-void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int nx, int ny)
+void TV_L1::dualTVL1(const __half2* I0, const __half2* I1, __half2* u1, __half2* u2, int nx, int ny)
 {
 	const size_t size = nx * ny;
-	const float lT = _lambda * _theta;
+	const __half2 lT = _lambda * _theta;
 
 	centeredGradient(I1, _I1x, _I1y, nx, ny);
 
 	// initialization of p
-	cudaMemsetAsync(_p11, 0.0f, size * sizeof(float));
-	cudaMemsetAsync(_p12, 0.0f, size * sizeof(float));
-	cudaMemsetAsync(_p21, 0.0f, size * sizeof(float));
-	cudaMemsetAsync(_p22, 0.0f, size * sizeof(float));
+	cudaMemsetAsync(_p11, 0.0f, size * sizeof(__half2));
+	cudaMemsetAsync(_p12, 0.0f, size * sizeof(__half2));
+	cudaMemsetAsync(_p21, 0.0f, size * sizeof(__half2));
+	cudaMemsetAsync(_p22, 0.0f, size * sizeof(__half2));
 
 	const size_t TH2{THREADS_PER_BLOCK/4};
 	dim3 blocks(ny / TH2 + (ny % TH2 == 0 ? 0:1), nx / TH2 + (nx % TH2 == 0 ? 0:1));
@@ -216,7 +216,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 		calculateRhoGrad<<<blocks1,threads1>>>(_I1wx, _I1wy, _I1w, u1, u2, I0, _grad, _rho_c, size);
 
 		int n{0};
-		float error{INFINITY};
+		__half2 error{INFINITY};
 		while (error > _epsilon * _epsilon && n < MAX_ITERATIONS)
 		{
 			n++;
@@ -229,7 +229,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			divergence(_p21, _p22, _div_p2, nx ,ny);
 
 			// estimate the values of the optical flow (u1, u2)
-			cudaMemsetAsync(_error, 0.0f, size * sizeof(float));
+			cudaMemsetAsync(_error, 0.0f, size * sizeof(__half2));
 			estimateOpticalFlow<<<blocks1,threads1>>>(u1, u2, _v1, _v2, _div_p1, _div_p2, _theta, size, _error);
 			cublasSasum(_handle, size, _error, 1, &error);
 			error /= size;
@@ -239,7 +239,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			forwardGradient(u2, _div_p2, _v2, nx ,ny);
 
 			// estimate the values of the dual variable (p1, p2)
-			const float taut = _tau / _theta;
+			const __half2 taut = _tau / _theta;
 			estimateGArgs<<<blocks1,threads1>>>(_div_p1, _div_p2, _v1, _v2, size, taut, _g1, _g2);
 
 			cublasSaxpy(_handle, size, &taut, _div_p1, 1, _p11, 1);
@@ -259,10 +259,10 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
  *
  **/
 void TV_L1::imageNormalization(
-		const float *I0,  // input image0
-		const float *I1,  // input image1
-		float *I0n,       // normalized output image0
-		float *I1n,       // normalized output image1
+		const __half2 *I0,  // input image0
+		const __half2 *I1,  // input image1
+		__half2 *I0n,       // normalized output image0
+		__half2 *I1n,       // normalized output image1
 		int size          // size of the image
 )
 {
@@ -274,15 +274,15 @@ void TV_L1::imageNormalization(
 	cublasIsamin(_handle, size, I1, 1, &iMin1);
 
 	// obtain the max and min of both images
-	float max0, max1, min0, min1;
-	cudaMemcpyAsync(&max0, I0 + iMax0-1, sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(&max1, I1 + iMax1-1, sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(&min0, I0 + iMin0-1, sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(&min1, I1 + iMin1-1, sizeof(float), cudaMemcpyDeviceToHost);
+	__half2 max0, max1, min0, min1;
+	cudaMemcpyAsync(&max0, I0 + iMax0-1, sizeof(__half2), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(&max1, I1 + iMax1-1, sizeof(__half2), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(&min0, I0 + iMin0-1, sizeof(__half2), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(&min1, I1 + iMin1-1, sizeof(__half2), cudaMemcpyDeviceToHost);
 
-	const float max = std::max(max0, max1);
-	const float min = std::min(min0, min1);
-	const float den = max - min;
+	const __half2 max = std::max(max0, max1);
+	const __half2 min = std::min(min0, min1);
+	const __half2 den = max - min;
 
 	if(den <= 0)
 		return;
@@ -298,9 +298,9 @@ void TV_L1::imageNormalization(
  * Function to compute the divergence with backward differences
  **/
 void TV_L1::divergence(
-		const float *v1, // x component of the vector field
-		const float *v2, // y component of the vector field
-		float *div,      // output divergence
+		const __half2 *v1, // x component of the vector field
+		const __half2 *v2, // y component of the vector field
+		__half2 *div,      // output divergence
 		const int nx,    // image width
 		const int ny     // image height
 )
@@ -328,9 +328,9 @@ void TV_L1::divergence(
  * Function to compute the gradient with forward differences
  **/
 void TV_L1::forwardGradient(
-		const float *f, //input image
-		float *fx,      //computed x derivative
-		float *fy,      //computed y derivative
+		const __half2 *f, //input image
+		__half2 *fx,      //computed x derivative
+		__half2 *fy,      //computed y derivative
 		const int nx,   //image width
 		const int ny    //image height
 		)
@@ -351,8 +351,8 @@ void TV_L1::forwardGradient(
 	columnsForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
 
 	// corners
-	cudaMemsetAsync(fx + (ny * nx - 1), 0.0f, sizeof(float));
-	cudaMemsetAsync(fy + (ny * nx - 1), 0.0f, sizeof(float));
+	cudaMemsetAsync(fx + (ny * nx - 1), 0.0f, sizeof(__half2));
+	cudaMemsetAsync(fy + (ny * nx - 1), 0.0f, sizeof(__half2));
 }
 
 
@@ -360,9 +360,9 @@ void TV_L1::forwardGradient(
  * Function to compute the gradient with centered differences
  **/
 void TV_L1::centeredGradient(
-		const float* input,  //input image
-		float *dx,           //computed x derivative
-		float *dy,           //computed y derivative
+		const __half2* input,  //input image
+		__half2 *dx,           //computed x derivative
+		__half2 *dy,           //computed y derivative
 		const int nx,        //image width
 		const int ny         //image height
 		)
@@ -391,17 +391,17 @@ void TV_L1::centeredGradient(
  * In-place Gaussian smoothing of an image
  */
 void TV_L1::gaussian(
-	float* I,             // input/output image
-	float* B,			  // coefficients of the 1D convolution
+	__half2* I,             // input/output image
+	__half2* B,			  // coefficients of the 1D convolution
 	const int* xdim,       // image width
 	const int* ydim,       // image height
-	float sigma,    // Gaussian sigma
-	float* buffer,
+	__half2 sigma,    // Gaussian sigma
+	__half2* buffer,
 	cublasHandle_t* handle
 )
 {
-	const float den  = 2*sigma*sigma;
-	const float sPi = sigma * std::sqrt(M_PI * 2);
+	const __half2 den  = 2*sigma*sigma;
+	const __half2 sPi = sigma * std::sqrt(M_PI * 2);
 	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
 	int hXdim{0}, hYdim{0};
 	cudaMemcpyAsync(&hXdim, xdim, sizeof(int), cudaMemcpyDeviceToHost);
@@ -418,9 +418,9 @@ void TV_L1::gaussian(
 	convolution1D<<<blocks, threads>>>(B, size, sPi, den);
 
 	// normalize the 1D convolution kernel
-	float norm, hB;
+	__half2 norm, hB;
 	cublasSasum(*handle, size, B, 1, &norm);
-	cudaMemcpyAsync(&hB, B, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpyAsync(&hB, B, sizeof(__half2), cudaMemcpyDeviceToHost);
 	norm = 1 / (norm * 2 - hB);
 	cublasSscal(*handle, size, &norm, B, 1);
 
@@ -440,23 +440,23 @@ void TV_L1::gaussian(
  * Downsample an image
 **/
 void TV_L1::zoomOut(
-	const float *I,    // input image
-	float* Iout,       // output image
-	float* B,
+	const __half2 *I,    // input image
+	__half2* Iout,       // output image
+	__half2* B,
 	const int* nx,      // image width
 	const int* ny,      // image height
 	int* nxx,
 	int* nyy,
-	const float factor, // zoom factor between 0 and 1
-	float* Is,           // temporary working image
-	float* gaussBuffer,
+	const __half2 factor, // zoom factor between 0 and 1
+	__half2* Is,           // temporary working image
+	__half2* gaussBuffer,
 	cublasHandle_t* handle
 )
 {
 	int sx, sy;
 	cudaMemcpyAsync(&sx, nx, sizeof(int), cudaMemcpyDeviceToHost);
 	cudaMemcpyAsync(&sy, ny, sizeof(int), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(Is, I, sx*sy * sizeof(float), cudaMemcpyDeviceToDevice);
+	cudaMemcpyAsync(Is, I, sx*sy * sizeof(__half2), cudaMemcpyDeviceToDevice);
 
 	// compute the size of the zoomed image
 	sx = (int)(sx * factor + 0.5);
@@ -466,7 +466,7 @@ void TV_L1::zoomOut(
 	cudaMemcpyAsync(nyy, &sy, sizeof(int), cudaMemcpyHostToDevice);
 
 	// compute the Gaussian sigma for smoothing
-	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
+	const __half2 sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
 	try { gaussian(Is, B, nx, ny, sigma, gaussBuffer, handle); }
@@ -484,8 +484,8 @@ void TV_L1::zoomOut(
  * Function to upsample the image
 **/
 void TV_L1::zoomIn(
-	const float *I, // input image
-	float *Iout,    // output image
+	const __half2 *I, // input image
+	__half2 *Iout,    // output image
 	const int* nx,         // width of the original image
 	const int* ny,         // height of the original image
 	const int* nxx,        // width of the zoomed image

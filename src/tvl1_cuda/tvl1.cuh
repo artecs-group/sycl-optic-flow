@@ -34,10 +34,10 @@ private:
     __half2* _hostU;
 
 	__half2 *_I0s, *_I1s, *_u1s, *_u2s;
-	int *_nx, *_ny, *_nxy, *_hNx, *_hNy;
+	int *_nx, *_ny, *_nxy, *_hNx, *_hNy, *_lastBlockCounter;
 
 	__half2 *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
-        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2;
+        *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2, *_partialMax, *_partialMin;
 
     float *_error, *_B, *_imBuffer;
 

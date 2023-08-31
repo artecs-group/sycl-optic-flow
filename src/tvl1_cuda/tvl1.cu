@@ -77,6 +77,12 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
 	const int bSize = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
 	cudaMalloc(&_B,  bSize * sizeof(float));
+
+	const int size = _width * _height;
+	const size_t blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	cudaMalloc(&_partialMax, blocks * sizeof(__half2));
+	cudaMalloc(&_partialMin, blocks * sizeof(__half2));
+	cudaMalloc(&_lastBlockCounter, blocks * sizeof(int));
 }
 
 TV_L1::~TV_L1() {
@@ -113,6 +119,9 @@ TV_L1::~TV_L1() {
 	cudaFree(_g2);
 	cudaFree(_B);
 	cudaFree(_error);
+	cudaFree(_partialMax);
+	cudaFree(_partialMin);
+	cudaFree(_lastBlockCounter);
 }
 
 
@@ -121,6 +130,7 @@ TV_L1::~TV_L1() {
  **/
 void TV_L1::runDualTVL1Multiscale(const float* I) {
 	const int size = _width * _height;
+	__half2 initValue{__float2half2_rn(0.0f)};
 	const size_t blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
 	const size_t threads = blocks == 1 ? size:THREADS_PER_BLOCK;
 
@@ -134,8 +144,8 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 	// setup initial values
 	cudaMemcpyAsync(_nx, &_width, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpyAsync(_ny, &_height, sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemsetAsync(_u1s + (_nscales-1 * size), 0.0f, size * sizeof(__half2));
-	cudaMemsetAsync(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(__half2));
+	cudaMemsetAsync(_u1s + (_nscales-1 * size), *((int*)&initValue), size * sizeof(__half2));
+	cudaMemsetAsync(_u2s + (_nscales-1 * size), *((int*)&initValue), size * sizeof(__half2));
 
 	// normalize the images between 0 and 255
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
@@ -150,7 +160,7 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
 	{
-		zoomSize<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, __float2half2_rn(_zfactor));
+		zoomSize<<<1,1>>>(_nx + (s-1), _ny + (s-1), _nx + s, _ny + s, _zfactor);
 
 		// zoom in the images to create the pyramidal structure
 		try {
@@ -193,14 +203,15 @@ void TV_L1::dualTVL1(const __half2* I0, const __half2* I1, __half2* u1, __half2*
 {
 	const size_t size = nx * ny;
 	const float lT = _lambda * _theta;
+	__half2 initValue{__float2half2_rn(0.0f)};
 
 	centeredGradient(I1, _I1x, _I1y, nx, ny);
 
 	// initialization of p
-	cudaMemsetAsync(_p11, 0.0f, size * sizeof(__half2));
-	cudaMemsetAsync(_p12, 0.0f, size * sizeof(__half2));
-	cudaMemsetAsync(_p21, 0.0f, size * sizeof(__half2));
-	cudaMemsetAsync(_p22, 0.0f, size * sizeof(__half2));
+	cudaMemsetAsync(_p11, *((int*)&initValue), size * sizeof(__half2));
+	cudaMemsetAsync(_p12, *((int*)&initValue), size * sizeof(__half2));
+	cudaMemsetAsync(_p21, *((int*)&initValue), size * sizeof(__half2));
+	cudaMemsetAsync(_p22, *((int*)&initValue), size * sizeof(__half2));
 
 	const size_t TH2{THREADS_PER_BLOCK/4};
 	dim3 blocks(ny / TH2 + (ny % TH2 == 0 ? 0:1), nx / TH2 + (nx % TH2 == 0 ? 0:1));
@@ -224,7 +235,7 @@ void TV_L1::dualTVL1(const __half2* I0, const __half2* I1, __half2* u1, __half2*
 			n++;
 			// estimate the values of the variable (v1, v2)
 			// (thresholding opterator TH)
-			estimateThreshold<<<blocks1,threads1>>>(_rho_c, _I1wx, u1, _I1wy, u2, _grad, __float2half2_rn(lT), size, _v1, _v2);
+			estimateThreshold<<<blocks1,threads1>>>(_rho_c, _I1wx, u1, _I1wy, u2, _grad, lT, size, _v1, _v2);
 
 			// compute the divergence of the dual variable (p1, p2)
 			divergence(_p11, _p12, _div_p1, nx ,ny);
@@ -232,7 +243,7 @@ void TV_L1::dualTVL1(const __half2* I0, const __half2* I1, __half2* u1, __half2*
 
 			// estimate the values of the optical flow (u1, u2)
 			cudaMemsetAsync(_error, 0.0f, size * sizeof(float));
-			estimateOpticalFlow<<<blocks1,threads1>>>(u1, u2, _v1, _v2, _div_p1, _div_p2, __float2half2_rn(_theta), size, _error);
+			estimateOpticalFlow<<<blocks1,threads1>>>(u1, u2, _v1, _v2, _div_p1, _div_p2, _theta, size, _error);
 			cublasSasum(_handle, size, _error, 1, &error);
 			error /= size;
 
@@ -242,7 +253,7 @@ void TV_L1::dualTVL1(const __half2* I0, const __half2* I1, __half2* u1, __half2*
 
 			// estimate the values of the dual variable (p1, p2)
 			const float taut = _tau / _theta;
-			estimateGArgs<<<blocks1,threads1>>>(_div_p1, _div_p2, _v1, _v2, size, __float2half2_rn(taut), _g1, _g2);
+			estimateGArgs<<<blocks1,threads1>>>(_div_p1, _div_p2, _v1, _v2, size, taut, _g1, _g2);
 
 			cublasAxpyEx(_handle, size, &taut, CUDA_R_32F, _div_p1, CUDA_R_16F, 1, _p11, CUDA_R_16F, 1, CUDA_R_32F);
 			cublasAxpyEx(_handle, size, &taut, CUDA_R_32F, _v1, CUDA_R_16F, 1, _p12, CUDA_R_16F, 1, CUDA_R_32F);
@@ -268,31 +279,34 @@ void TV_L1::imageNormalization(
 		int size          // size of the image
 )
 {
-	// obtain the max and min of each image
-	int iMax0, iMax1, iMin0, iMin1;
-	cublasIsamax(_handle, size, I0, 1, &iMax0);
-	cublasIsamax(_handle, size, I1, 1, &iMax1);
-	cublasIsamin(_handle, size, I0, 1, &iMin0);
-	cublasIsamin(_handle, size, I1, 1, &iMin1);
-
-	// obtain the max and min of both images
+	const size_t blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	const size_t threads = blocks == 1 ? size:THREADS_PER_BLOCK;
+	__half2 initMin{__float2half2_rn(FLT_MAX)}, initMax{__float2half2_rn(-1.0f)};
 	__half2 max0, max1, min0, min1;
-	cudaMemcpyAsync(&max0, I0 + iMax0-1, sizeof(__half2), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(&max1, I1 + iMax1-1, sizeof(__half2), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(&min0, I0 + iMin0-1, sizeof(__half2), cudaMemcpyDeviceToHost);
-	cudaMemcpyAsync(&min1, I1 + iMin1-1, sizeof(__half2), cudaMemcpyDeviceToHost);
 
-	const __half2 max = std::max(max0, max1);
-	const __half2 min = std::min(min0, min1);
-	const __half2 den = max - min;
+	cudaMemset(_partialMax, *((int*)&initMax), blocks*sizeof(__half2));
+	cudaMemset(_partialMin, *((int*)&initMin), blocks*sizeof(__half2));
+	cudaMemset(_lastBlockCounter, 0, blocks*sizeof(int));
+	half2MaxMin<<<blocks, threads>>>(size, I0, _partialMax, _partialMin, _lastBlockCounter);
+	cudaMemcpy(&max0, _partialMax, sizeof(__half2), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&min0, _partialMin, sizeof(__half2), cudaMemcpyDeviceToHost);
+
+	cudaMemset(_partialMax, *((int*)&initMax), blocks*sizeof(__half2));
+	cudaMemset(_partialMin, *((int*)&initMin), blocks*sizeof(__half2));
+	cudaMemset(_lastBlockCounter, 0, blocks*sizeof(int));
+	half2MaxMin<<<blocks, threads>>>(size, I1, _partialMax, _partialMin, _lastBlockCounter);
+	cudaMemcpy(&max1, _partialMax, sizeof(__half2), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&min1, _partialMin, sizeof(__half2), cudaMemcpyDeviceToHost);
+
+	const float max = std::max(__high2float(max0), __high2float(max1));
+	const float min = std::min(__high2float(min0), __high2float(min1));
+	const float den = max - min;
 
 	if(den <= 0)
 		return;
 
 	// normalize both images
-	const int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
-	const int threads = blocks == 1 ? size : THREADS_PER_BLOCK;
-	normKernel<<<blocks, threads>>>(I0, I1, I0n, I1n, min, den, size);
+	normKernel<<<blocks, threads>>>(I0, I1, I0n, I1n, __float2half2_rn(min), __float2half2_rn(den), size);
 }
 
 
@@ -353,8 +367,9 @@ void TV_L1::forwardGradient(
 	columnsForwardGradient<<<blocks, threads>>>(f, fx, fy, nx, ny);
 
 	// corners
-	cudaMemsetAsync(fx + (ny * nx - 1), 0.0f, sizeof(__half2));
-	cudaMemsetAsync(fy + (ny * nx - 1), 0.0f, sizeof(__half2));
+	__half2 initValue{__float2half2_rn(0.0f)};
+	cudaMemsetAsync(fx + (ny * nx - 1), *((int*)&initValue), sizeof(__half2));
+	cudaMemsetAsync(fy + (ny * nx - 1), *((int*)&initValue), sizeof(__half2));
 }
 
 
@@ -478,7 +493,7 @@ void TV_L1::zoomOut(
 	const size_t TH2{THREADS_PER_BLOCK/4};
 	dim3 blocks(sy / TH2 + (sy % TH2 == 0 ? 0:1), sx / TH2 + (sx % TH2 == 0 ? 0:1));
 	dim3 threads(blocks.x == 1 ? sy:TH2, blocks.y == 1 ? sx:TH2);
-	bicubicResample<<<blocks, threads>>>(Is, Iout, nxx, nyy, nx, ny, __float2half2_rn(factor));
+	bicubicResample<<<blocks, threads>>>(Is, Iout, nxx, nyy, nx, ny, factor);
 }
 
 

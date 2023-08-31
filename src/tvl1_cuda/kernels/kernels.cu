@@ -145,7 +145,7 @@ __global__ void lineConvolution(__half2 *I, const float *B, const int* xDim, con
             buffer[i] = I[k * xdim + size - i];
             buffer[j] = I[k * xdim + xdim - i - 1];
         }
-		const __half2 fB = __float2half2_rn(B[0]);
+		__half2 fB = __float2half2_rn(B[0]);
         for (i = size; i < bdx; i++) {
             __half2 sum = fB * buffer[i];
             for (j = 1; j < size; j++)
@@ -171,7 +171,7 @@ __global__ void columnConvolution(__half2* I, const float* B, const int* xDim, c
             buffer[j] = I[(ydim - i - 1) * xdim + k];
         }
 
-		const __half2 fB = __float2half2_rn(B[0]);
+		__half2 fB = __float2half2_rn(B[0]);
         for (i = size; i < bdy; i++) {
             __half2 sum = fB * buffer[i];
             for (j = 1; j < size; j++)
@@ -183,11 +183,11 @@ __global__ void columnConvolution(__half2* I, const float* B, const int* xDim, c
 
 
 __global__ void bicubicResample(const __half2* Is, __half2 *Iout, const int* nxx, const int* nyy, 
-	const int* nx, const int* ny, __half2 factor){
+	const int* nx, const int* ny, float factor){
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
     const int j = blockIdx.y * blockDim.y + threadIdx.y;
-	const __half2 ii = __float2half2_rn(static_cast<float>(i)) / factor;
-	const __half2 jj = __float2half2_rn(static_cast<float>(j)) / factor;
+	const __half2 ii = __float2half2_rn(static_cast<float>(i)) / __float2half2_rn(factor);
+	const __half2 jj = __float2half2_rn(static_cast<float>(j)) / __float2half2_rn(factor);
 
     if (i < *nyy && j < *nxx) {
         Iout[i * *nxx + j] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
@@ -216,13 +216,13 @@ __global__ void zoomSize(
 	const int* ny,      // height of the orignal image
 	int* nxx,    // width of the zoomed image
 	int* nyy,    // height of the zoomed image
-	__half2 factor // zoom factor between 0 and 1
+	float factor // zoom factor between 0 and 1
 )
 {
 	//compute the new size corresponding to factor
 	//we add 0.5 for rounding off to the closest number
-	*nxx = (int)(*nx * __high2float(factor) + 0.5);
-	*nyy = (int)(*ny * __high2float(factor) + 0.5);
+	*nxx = (int)(*nx * factor + 0.5);
+	*nyy = (int)(*ny * factor + 0.5);
 }
 
 
@@ -353,11 +353,12 @@ __global__ void calculateRhoGrad(const __half2* I1wx, const __half2* I1wy, const
 
 
 __global__ void estimateThreshold(const __half2* rho_c, const __half2* I1wx, const __half2* u1, const __half2* I1wy,
-	const __half2* u2, const __half2* grad, __half2 lT, size_t size, __half2* v1, __half2* v2)
+	const __half2* u2, const __half2* grad, float llT, size_t size, __half2* v1, __half2* v2)
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if(i < size) {
+		const __half2 lT{__float2half2_rn(llT)};
 		const __half2 rho = rho_c[i] + (I1wx[i] * u1[i] + I1wy[i] * u2[i]);
 		const __half2 fi{-rho/grad[i]};
 		const bool c1{rho >= -lT * grad[i]};
@@ -385,7 +386,7 @@ __global__ void estimateThreshold(const __half2* rho_c, const __half2* I1wx, con
 
 
 __global__ void estimateOpticalFlow(__half2* u1, __half2* u2, const __half2* v1, const __half2* v2, 
-	const __half2* div_p1, const __half2* div_p2, __half2 theta, size_t size, float* error)
+	const __half2* div_p1, const __half2* div_p2, float theta, size_t size, float* error)
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -393,8 +394,8 @@ __global__ void estimateOpticalFlow(__half2* u1, __half2* u2, const __half2* v1,
 		const float u1k = __high2float(u1[i]);
 		const float u2k = __high2float(u2[i]);
 
-		u1[i] = v1[i] + theta * div_p1[i];
-		u2[i] = v2[i] + theta * div_p2[i];
+		u1[i] = v1[i] + __float2half2_rn(theta) * div_p1[i];
+		u2[i] = v2[i] + __float2half2_rn(theta) * div_p2[i];
 
 		const float u1n = __high2float(u1[i]);
 		const float u2n = __high2float(u2[i]);
@@ -405,13 +406,13 @@ __global__ void estimateOpticalFlow(__half2* u1, __half2* u2, const __half2* v1,
 
 
 __global__ void estimateGArgs(const __half2* div_p1, const __half2* div_p2, const __half2* v1, const __half2* v2, 
-	size_t size, __half2 taut, __half2* g1, __half2* g2)
+	size_t size, float taut, __half2* g1, __half2* g2)
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if(i < size){		
-		g1[i] = __float2half2_rn(1.0f) + taut * __float2half2_rn(hypotf(__high2float(div_p1[i]), __high2float(v1[i])));
-		g2[i] = __float2half2_rn(1.0f) + taut * __float2half2_rn(hypotf(__high2float(div_p2[i]), __high2float(v2[i])));
+		g1[i] = __float2half2_rn(1.0f) + __float2half2_rn(taut) * __float2half2_rn(hypotf(__high2float(div_p1[i]), __high2float(v1[i])));
+		g2[i] = __float2half2_rn(1.0f) + __float2half2_rn(taut) * __float2half2_rn(hypotf(__high2float(div_p2[i]), __high2float(v2[i])));
 	}
 }
 
@@ -478,7 +479,7 @@ __device__ bool lastBlock(int* counter) {
 }
 
 
-__global__ void half2MaxMin(int N, __half2* __restrict__ inVec, __half2* __restrict__ partialMax, __half2* __restrict__ partialMin, int* __restrict__ lastBlockCounter) {
+__global__ void half2MaxMin(int N, const __half2* __restrict__ inVec, __half2* __restrict__ partialMax, __half2* __restrict__ partialMin, int* __restrict__ lastBlockCounter) {
     int thIdx = threadIdx.x;
     const int globalIdx = thIdx + blockIdx.x * blockDim.x;
     const int gridSize = blockDim.x * gridDim.x;
@@ -486,7 +487,7 @@ __global__ void half2MaxMin(int N, __half2* __restrict__ inVec, __half2* __restr
 
 	if(globalIdx < N) {
 		//perform private sums
-		__half2 max{__float2half2_rn(-1.0)}, min{__float2half2_rn(1000.0)};
+		__half2 max{__float2half2_rn(-1.0)}, min{__float2half2_rn(FLT_MAX)};
 		for (int i = globalIdx; i < N; i += gridSize) {
 			max = __hmax2(max, inVec[i]);
 			min = __hmin2(min, inVec[i]);

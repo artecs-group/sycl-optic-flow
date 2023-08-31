@@ -7,6 +7,9 @@
 #include <cuda_fp16.h>
 
 constexpr float GRAD_IS_ZERO{1E-10};
+constexpr int WRAP_SIZE{32};
+constexpr int WRAPS_PER_BLOCK{THREADS_PER_BLOCK/WRAP_SIZE};
+constexpr unsigned int MASK{0xffffffff};
 
 __global__ void bodyGradient(const __half2* input, __half2* dx, __half2* dy, int nx, int ny);
 __global__ void edgeRowsGradient(const __half2* input, __half2* dx, __half2* dy, int nx, int ny);
@@ -40,5 +43,10 @@ __global__ void estimateGArgs(const __half2* div_p1, const __half2* div_p2, cons
 __global__ void divideByG(const __half2* g1, const __half2* g2, size_t size, __half2* p11, __half2* p12, __half2* p21, __half2* p22);
 
 __global__ void copyFloat2Half2(const float* __restrict__ in, __half2* out, int size);
+
+__device__ __half2 warpMax(__half2 max);
+__device__ __half2 warpMin(__half2 min);
+__device__ bool lastBlock(int* counter);
+__global__ void half2MaxMin(int N, __half2* __restrict__ inVec, __half2* __restrict__ partialMax, __half2* __restrict__ partialMin, int* __restrict__ lastBlockCounter);
 
 #endif

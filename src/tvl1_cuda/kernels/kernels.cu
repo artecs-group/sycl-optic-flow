@@ -447,3 +447,96 @@ __global__ void copyFloat2Half2(const float* __restrict__ in, __half2* out, int 
 		out[i] = __float2half2_rn(in[i]);
 	}
 }
+
+
+__device__ __half2 warpMax(__half2 max) {
+	max = __hmax2(max, __shfl_down_sync(MASK, max, 16));
+	max = __hmax2(max, __shfl_down_sync(MASK, max, 8));
+	max = __hmax2(max, __shfl_down_sync(MASK, max, 4));
+	max = __hmax2(max, __shfl_down_sync(MASK, max, 2));
+	max = __hmax2(max, __shfl_down_sync(MASK, max, 1));
+    return max;
+}
+
+
+__device__ __half2 warpMin(__half2 min) {
+	min = __hmin2(min, __shfl_down_sync(MASK, min, 16));
+	min = __hmin2(min, __shfl_down_sync(MASK, min, 8));
+	min = __hmin2(min, __shfl_down_sync(MASK, min, 4));
+	min = __hmin2(min, __shfl_down_sync(MASK, min, 2));
+	min = __hmin2(min, __shfl_down_sync(MASK, min, 1));
+    return min;
+}
+
+
+__device__ bool lastBlock(int* counter) {
+    __threadfence(); //ensure that partial result is visible by all BLOCKS
+    int last = 0;
+    if (threadIdx.x == 0)
+        last = atomicAdd(counter, 1);
+    return __syncthreads_or(last == gridDim.x-1);
+}
+
+
+__global__ void half2MaxMin(int N, __half2* __restrict__ inVec, __half2* __restrict__ partialMax, __half2* __restrict__ partialMin, int* __restrict__ lastBlockCounter) {
+    int thIdx = threadIdx.x;
+    const int globalIdx = thIdx + blockIdx.x * blockDim.x;
+    const int gridSize = blockDim.x * gridDim.x;
+    const int wrapIdx = thIdx / WRAPS_PER_BLOCK;
+
+	if(globalIdx < N) {
+		//perform private sums
+		__half2 max{__float2half2_rn(-1.0)}, min{__float2half2_rn(1000.0)};
+		for (int i = globalIdx; i < N; i += gridSize) {
+			max = __hmax2(max, inVec[i]);
+			min = __hmin2(min, inVec[i]);
+		}
+
+		// share among block threads private sum
+		__shared__ __half2 shMax[WRAPS_PER_BLOCK];
+		__shared__ __half2 shMin[WRAPS_PER_BLOCK];
+
+		// SIMT reduction
+		shMax[wrapIdx] = warpMax(max);
+		shMin[wrapIdx] = warpMin(min);
+		__syncthreads();
+
+		//first warp only
+		if (thIdx < WRAP_SIZE) {
+			max = thIdx * WRAP_SIZE < blockDim.x ? shMax[thIdx] : __float2half2_rn(0.0f);
+			min = thIdx * WRAP_SIZE < blockDim.x ? shMin[thIdx] : __float2half2_rn(0.0f);
+			//join the other wrap reductions
+			max = warpMax(max);
+			min = warpMin(min);
+			
+			// each block shares its partial reduction
+			if (thIdx == 0) {
+				partialMax[blockIdx.x] = max;
+				partialMin[blockIdx.x] = min;
+			}
+		}
+
+		// choose last block to perform the final reduction
+		if (lastBlock(lastBlockCounter)) {
+			max = thIdx < gridSize ? partialMax[thIdx] : __float2half2_rn(0.0f);
+			min = thIdx < gridSize ? partialMin[thIdx] : __float2half2_rn(0.0f);
+			shMax[wrapIdx] = warpMax(max);
+			shMin[wrapIdx] = warpMin(min);
+			__syncthreads();
+
+			//first warp only
+			if (thIdx < WRAP_SIZE) {
+				max = thIdx * WRAP_SIZE < blockDim.x ? shMax[thIdx] : __float2half2_rn(0.0f);
+				min = thIdx * WRAP_SIZE < blockDim.x ? shMin[thIdx] : __float2half2_rn(0.0f);
+				//join the other wrap reductions
+				max = warpMax(max);
+				min = warpMin(min);
+				
+				if (thIdx == 0) {
+					partialMax[0] = max;
+					partialMin[0] = min;
+				}
+			}
+		}
+	}
+}

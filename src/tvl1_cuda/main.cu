@@ -24,7 +24,7 @@ public:
     bool doProcess() { return m_process; }
     void setRunning(bool running)      { m_running = running; }
     void setDoProcess(bool process)    { m_process = process; }
-    void flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame); 
+    void flowToColor(int width, int height, const __half2* flowData, cv::Mat& outFrame); 
 protected:
     void handleKey(char key);
 private:
@@ -141,7 +141,7 @@ int App::run() {
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
     // buffers required for the image proccesing
-    __half2* img = new __half2[width * height]{0};
+    float* img = new float[width * height]{0};
     TV_L1 tvl1 = TV_L1(width, height);
     int processedFrames = 0;
     cv::TickMeter timer;
@@ -160,7 +160,7 @@ int App::run() {
             if (m_process) {
                 #pragma omp parallel for simd
                 for (size_t i = 0; i < width*height; i++) {
-                    img[i] = __float2half2_rn(static_cast<float>(m_frameGray.data[i]));
+                    img[i] = static_cast<float>(m_frameGray.data[i]);
                 }
                 try {
                     tvl1.runDualTVL1Multiscale(img);

@@ -12,9 +12,9 @@ __global__ void bodyGradient(const __half2* input, __half2* dx, __half2* dy, int
 __global__ void edgeRowsGradient(const __half2* input, __half2* dx, __half2* dy, int nx, int ny);
 __global__ void edgeColumnsGradient(const __half2* input, __half2* dx, __half2* dy, int nx, int ny);
 __global__ void cornersGradient(const __half2* input, __half2* dx, __half2* dy, int nx, int ny);
-__global__ void convolution1D(__half2* B, int size, __half2 sPi, __half2 den);
-__global__ void lineConvolution(__half2 *I, const __half2 *B, const int* xDim, const int* yDim, int size, __half2* buffer);
-__global__ void columnConvolution(__half2* I, const __half2* B, const int* xDim, const int* yDim, int size, __half2* buffer);
+__global__ void convolution1D(float* B, int size, float sPi, float den);
+__global__ void lineConvolution(__half2 *I, const float* B, const int* xDim, const int* yDim, int size, __half2* buffer);
+__global__ void columnConvolution(__half2* I, const float* B, const int* xDim, const int* yDim, int size, __half2* buffer);
 
 __global__ void cornersDivergence(const __half2* v1, const __half2* v2, __half2* div, int nx, int ny);
 __global__ void edgeColumnsDivergence(const __half2* v1, const __half2* v2, __half2* div, int nx, int ny);
@@ -35,8 +35,10 @@ __global__ void bicubicInterpolationWarp(const __half2* input, const __half2 *u,
 __global__ void normKernel(const __half2* __restrict__ I0, const __half2* __restrict__ I1, __half2* __restrict__ I0n, __half2* __restrict__ I1n, __half2 min, __half2 den, int size);
 __global__ void calculateRhoGrad(const __half2* I1wx, const __half2* I1wy, const __half2* I1w, const __half2* u1, const __half2* u2, const __half2* I0, __half2* grad, __half2* rho_c, int size);
 __global__ void estimateThreshold(const __half2* rho_c, const __half2* I1wx, const __half2* u1, const __half2* I1wy, const __half2* u2, const __half2* grad, __half2 lT, size_t size, __half2* v1, __half2* v2);
-__global__ void estimateOpticalFlow(__half2* u1, __half2* u2, const __half2* v1, const __half2* v2, const __half2* div_p1, const __half2* div_p2, __half2 theta, size_t size, __half2* error);
+__global__ void estimateOpticalFlow(__half2* u1, __half2* u2, const __half2* v1, const __half2* v2, const __half2* div_p1, const __half2* div_p2, __half2 theta, size_t size, float* error);
 __global__ void estimateGArgs(const __half2* div_p1, const __half2* div_p2, const __half2* v1, const __half2* v2, size_t size, __half2 taut, __half2* g1, __half2* g2);
 __global__ void divideByG(const __half2* g1, const __half2* g2, size_t size, __half2* p11, __half2* p12, __half2* p21, __half2* p22);
+
+__global__ void copyFloat2Half2(const float* __restrict__ in, __half2* out, int size);
 
 #endif

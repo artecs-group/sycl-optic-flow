@@ -123,15 +123,15 @@ __global__ void cornersGradient(const __half2* input, __half2* dx, __half2* dy, 
 }
 
 
-__global__ void convolution1D(__half2* B, int size, __half2 sPi, __half2 den) {
+__global__ void convolution1D(float* B, int size, float sPi, float den) {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if(i < size)
-		B[i] = __float2half2_rn(1.0) / sPi * h2exp(__float2half2_rn((float)-i * i) / den);
+		B[i] = 1.0 / sPi * expf((float)-i * i / den);
 }
 
 
-__global__ void lineConvolution(__half2 *I, const __half2 *B, const int* xDim, const int* yDim, int size, __half2* buffer) {
+__global__ void lineConvolution(__half2 *I, const float *B, const int* xDim, const int* yDim, int size, __half2* buffer) {
 	int k = blockIdx.y * blockDim.y + threadIdx.y; // Row index
 	const int xdim{xDim[0]}, ydim{yDim[0]};
     const int bdx = xdim + size;
@@ -145,18 +145,18 @@ __global__ void lineConvolution(__half2 *I, const __half2 *B, const int* xDim, c
             buffer[i] = I[k * xdim + size - i];
             buffer[j] = I[k * xdim + xdim - i - 1];
         }
-
+		const __half2 fB = __float2half2_rn(B[0]);
         for (i = size; i < bdx; i++) {
-            __half2 sum = B[0] * buffer[i];
+            __half2 sum = fB * buffer[i];
             for (j = 1; j < size; j++)
-                sum += B[j] * (buffer[i - j] + buffer[i + j]);
+                sum += __float2half2_rn(B[j]) * (buffer[i - j] + buffer[i + j]);
             I[k * xdim + i - size] = sum;
         }
     }
 }
 
 
-__global__ void columnConvolution(__half2* I, const __half2* B, const int* xDim, const int* yDim, int size, __half2* buffer) {
+__global__ void columnConvolution(__half2* I, const float* B, const int* xDim, const int* yDim, int size, __half2* buffer) {
     int k = blockIdx.y * blockDim.y + threadIdx.y; // Row index
 	const int xdim{xDim[0]}, ydim{yDim[0]};
     const int bdy = ydim + size;
@@ -171,10 +171,11 @@ __global__ void columnConvolution(__half2* I, const __half2* B, const int* xDim,
             buffer[j] = I[(ydim - i - 1) * xdim + k];
         }
 
+		const __half2 fB = __float2half2_rn(B[0]);
         for (i = size; i < bdy; i++) {
-            __half2 sum = B[0] * buffer[i];
+            __half2 sum = fB * buffer[i];
             for (j = 1; j < size; j++)
-                sum += B[j] * (buffer[i - j] + buffer[i + j]);
+                sum += __float2half2_rn(B[j]) * (buffer[i - j] + buffer[i + j]);
             I[(i - size) * xdim + k] = sum;
         }
     }
@@ -384,18 +385,21 @@ __global__ void estimateThreshold(const __half2* rho_c, const __half2* I1wx, con
 
 
 __global__ void estimateOpticalFlow(__half2* u1, __half2* u2, const __half2* v1, const __half2* v2, 
-	const __half2* div_p1, const __half2* div_p2, __half2 theta, size_t size, __half2* error)
+	const __half2* div_p1, const __half2* div_p2, __half2 theta, size_t size, float* error)
 {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if(i < size) {		
-		const __half2 u1k = u1[i];
-		const __half2 u2k = u2[i];
+		const float u1k = __high2float(u1[i]);
+		const float u2k = __high2float(u2[i]);
 
 		u1[i] = v1[i] + theta * div_p1[i];
 		u2[i] = v2[i] + theta * div_p2[i];
 
-		error[i] = (u1[i] - u1k) * (u1[i] - u1k) + (u2[i] - u2k) * (u2[i] - u2k);
+		const float u1n = __high2float(u1[i]);
+		const float u2n = __high2float(u2[i]);
+
+		error[i] = (u1n - u1k) * (u1n - u1k) + (u2n - u2k) * (u2n - u2k);
 	}
 }
 
@@ -432,5 +436,14 @@ __global__ void normKernel(const __half2* __restrict__ I0, const __half2* __rest
 	if(i < size) {
 		I0n[i] = __float2half2_rn(255.0) * (I0[i] - min) / den;
 		I1n[i] = __float2half2_rn(255.0) * (I1[i] - min) / den;
+	}
+}
+
+
+__global__ void copyFloat2Half2(const float* __restrict__ in, __half2* out, int size) {
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+	
+	if(i < size) {
+		out[i] = __float2half2_rn(in[i]);
 	}
 }

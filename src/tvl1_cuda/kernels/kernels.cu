@@ -302,7 +302,7 @@ __device__ float bicubicInterpolationAt(
 		return 0.0;
 
 	//obtain the interpolation points of the image
-	float v[4]{0};
+	float v[4];
 	const float pol[4][4] = {
 		{input[mx  + nx * my], input[mx  + nx * y], input[mx  + nx * dy], input[mx  + nx * ddy]},
 		{input[x   + nx * my], input[x   + nx * y], input[x   + nx * dy], input[x   + nx * ddy]},

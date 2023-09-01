@@ -1,6 +1,7 @@
 #include <string>
 #include <cmath>
-#include <CL/sycl.hpp>
+#include <iostream>
+//#include <CL/sycl.hpp>
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
@@ -17,7 +18,6 @@ public:
     App(const CommandLineParser& cmd);
     void initVideoSource();
     void initSYCL();
-    void process_frame(cv::Mat& frame);
     int run();
     bool isRunning() { return m_running; }
     bool doProcess() { return m_process; }
@@ -41,7 +41,7 @@ private:
     cv::VideoCapture            m_cap;
     cv::Mat                     m_frame;
 
-    cl::sycl::queue sycl_queue;
+    //cl::sycl::queue sycl_queue;
 };
 
 
@@ -57,15 +57,15 @@ App::App(const CommandLineParser& cmd)
 
 void App::initSYCL()
 {
-    using namespace cl::sycl;
+    // using namespace cl::sycl;
 
-    sycl_queue = cl::sycl::queue(cl::sycl::default_selector_v);
+    // sycl_queue = cl::sycl::queue(cl::sycl::default_selector_v);
 
-    auto device = sycl_queue.get_device();
-    auto platform = device.get_platform();
-    std::cout << "SYCL device: " << device.get_info<info::device::name>()
-        << " @ " << device.get_info<info::device::driver_version>()
-        << " (platform: " << platform.get_info<info::platform::name>() << ")" << std::endl;
+    // auto device = sycl_queue.get_device();
+    // auto platform = device.get_platform();
+    // std::cout << "SYCL device: " << device.get_info<info::device::name>()
+    //     << " @ " << device.get_info<info::device::driver_version>()
+    //     << " (platform: " << platform.get_info<info::platform::name>() << ")" << std::endl;
 } // initSYCL()
 
 
@@ -88,42 +88,6 @@ void App::initVideoSource()
     else
         throw std::runtime_error(std::string("specify video source"));
 } // initVideoSource()
-
-
-void App::process_frame(cv::Mat& frame)
-{
-    using namespace cl::sycl;
-
-    // cv::Mat => cl::sycl::buffer
-    {
-        CV_Assert(frame.isContinuous());
-        CV_CheckTypeEQ(frame.type(), CV_8UC1, "");
-
-        buffer<uint8_t, 2> frame_buffer(frame.data, range<2>(frame.rows, frame.cols));
-
-        sycl_queue.submit([&](handler& cgh) {
-          auto pixels = frame_buffer.get_access<access::mode::read_write>(cgh);
-
-          cgh.parallel_for<class sycl_inverse_kernel>(range<2>(frame.rows, frame.cols), [=](item<2> item) {
-              uint8_t v = pixels[item];
-              pixels[item] = ~v;
-          });
-        });
-
-        sycl_queue.wait_and_throw();
-    }
-
-    {
-        UMat blurResult;
-        {
-            UMat umat_buffer = frame.getUMat(ACCESS_RW);
-            cv::blur(umat_buffer, blurResult, Size(3, 3));  // UMat doesn't support inplace
-        }
-        Mat result;
-        blurResult.copyTo(result);
-        swap(result, frame);
-    }
-}
 
 
 void App::flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame) {
@@ -165,7 +129,7 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
 int App::run() {
     std::cout << "Initializing..." << std::endl;
 
-    initSYCL();
+    //initSYCL();
     initVideoSource();
 
     std::cout << "Press ESC to exit" << std::endl;
@@ -175,7 +139,7 @@ int App::run() {
     m_process = true;
     m_show_ui = true;
 
-    std::string devName = sycl_queue.get_device().get_info<sycl::info::device::name>();
+    //std::string devName = sycl_queue.get_device().get_info<sycl::info::device::name>();
 
     const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
@@ -218,13 +182,13 @@ int App::run() {
 
         std::ostringstream msg, msg2;
         int currentFPS = 1000 / timer.getTimeMilli();
-        msg << devName;
+        //msg << devName;
         msg2 << "FPS " << currentFPS << " (" << imgToShow.size
             << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
             << " (process: " << (m_process ? "True" : "False") << ")";
 
-        cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-        cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+        cv::putText(imgToShow, msg2.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+        //cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
 
         if (m_show_ui) {
             try {

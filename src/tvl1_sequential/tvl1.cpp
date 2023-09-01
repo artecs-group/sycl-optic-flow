@@ -277,14 +277,6 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 				_g2[i] = 1.0f + taut * std::hypot(_div_p2[i], _v2[i]);
 			}
 
-			// #pragma omp parallel for simd
-			// for (int i = 0; i < size; i++) {
-			// 	_p11[i] = (taut * _div_p1[i] + _p11[i]) / _g1[i];
-			// 	_p12[i] = (taut * _v1[i] + _p12[i]) / _g1[i];
-			// 	_p21[i] = (taut * _div_p2[i] + _p21[i]) / _g2[i];
-			// 	_p22[i] = (taut * _v2[i] + _p22[i]) / _g2[i];
-			// }
-
 			cblas_saxpy(size, taut, _div_p1, 1, _p11, 1);
 			cblas_saxpy(size, taut, _v1, 1, _p12, 1);
 			cblas_saxpy(size, taut, _div_p2, 1, _p21, 1);

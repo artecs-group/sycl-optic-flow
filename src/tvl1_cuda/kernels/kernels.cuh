@@ -44,6 +44,7 @@ __global__ void estimateGArgs(const __half2* div_p1, const __half2* div_p2, cons
 __global__ void divideByG(const __half2* g1, const __half2* g2, size_t size, __half2* p11, __half2* p12, __half2* p21, __half2* p22);
 
 __global__ void copyFloat2Half2(const float* __restrict__ in, __half2* out, int size);
+__global__ void memSetHalf2(float value, __half2* out, int size);
 
 __device__ __half2 warpMax(__half2 max);
 __device__ __half2 warpMin(__half2 min);

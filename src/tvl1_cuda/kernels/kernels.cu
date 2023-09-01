@@ -450,6 +450,15 @@ __global__ void copyFloat2Half2(const float* __restrict__ in, __half2* out, int 
 }
 
 
+__global__ void memSetHalf2(float value, __half2* out, int size) {
+	const int i = blockIdx.x * blockDim.x + threadIdx.x;
+	
+	if(i < size) {
+		out[i] = __floats2half2_rn(value);
+	}
+}
+
+
 __device__ __half2 warpMax(__half2 max) {
 	max = __hmax2(max, __shfl_down_sync(MASK, max, 16));
 	max = __hmax2(max, __shfl_down_sync(MASK, max, 8));

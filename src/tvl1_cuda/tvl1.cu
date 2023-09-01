@@ -37,51 +37,51 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
     //images of the pyramid don't have a size smaller than 16x16
 	const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
 	_nscales = (N < nscales) ? N : nscales;
+	const int size = _width * _height;
 
-	_hostU = new __half2[2 * _width*_height];
+	_hostU = new __half2[2 * size];
 	_hNx   = new int[_nscales];
 	_hNy   = new int[_nscales];
 
 	cublasCreate(&_handle);
 
 	// allocate memory for the pyramid structure
-	cudaMalloc(&_I0s, _nscales * _width * _height * sizeof(__half2));
-	cudaMalloc(&_I1s, _nscales * _width * _height * sizeof(__half2));
-	cudaMalloc(&_u1s, _nscales * _width * _height * sizeof(__half2));
-	cudaMalloc(&_u2s, _nscales * _width * _height * sizeof(__half2));
-	cudaMalloc(&_imBuffer, _width * _height * sizeof(float));
+	cudaMalloc(&_I0s, _nscales * ((size+1) / 2) * sizeof(__half2));
+	cudaMalloc(&_I1s, _nscales * ((size+1) / 2) * sizeof(__half2));
+	cudaMalloc(&_u1s, _nscales * ((size+1) / 2) * sizeof(__half2));
+	cudaMalloc(&_u2s, _nscales * ((size+1) / 2) * sizeof(__half2));
+	cudaMalloc(&_imBuffer, size * sizeof(float));
 	cudaMalloc(&_nx, _nscales * sizeof(int));
 	cudaMalloc(&_ny, _nscales * sizeof(int));
 	cudaMalloc(&_nxy, 2 * sizeof(int));
 
-	cudaMalloc(&_I1x, _width*_height * sizeof(__half2));
-	cudaMalloc(&_I1y, _width*_height * sizeof(__half2));
-	cudaMalloc(&_I1w, _width*_height * sizeof(__half2));
-	cudaMalloc(&_I1wx, _width*_height * sizeof(__half2));
-	cudaMalloc(&_I1wy, _width*_height * sizeof(__half2));
-	cudaMalloc(&_rho_c, _width*_height * sizeof(__half2));
-	cudaMalloc(&_v1, _width*_height * sizeof(__half2));
-	cudaMalloc(&_v2, _width*_height * sizeof(__half2));
-	cudaMalloc(&_p11, _width*_height * sizeof(__half2));
-	cudaMalloc(&_p12, _width*_height * sizeof(__half2));
-	cudaMalloc(&_p21, _width*_height * sizeof(__half2));
-	cudaMalloc(&_p22, _width*_height * sizeof(__half2));
-	cudaMalloc(&_grad, _width*_height * sizeof(__half2));
-	cudaMalloc(&_div_p1, _width*_height * sizeof(__half2));
-	cudaMalloc(&_div_p2, _width*_height * sizeof(__half2));
-	cudaMalloc(&_g1, _width*_height * sizeof(__half2));
-	cudaMalloc(&_g2, _width*_height * sizeof(__half2));
-	cudaMalloc(&_error, _width*_height * sizeof(float));
+	cudaMalloc(&_I1x, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_I1y, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_I1w, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_I1wx, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_I1wy, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_rho_c, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_v1, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_v2, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_p11, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_p12, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_p21, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_p22, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_grad, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_div_p1, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_div_p2, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_g1, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_g2, (size+1)/2 * sizeof(__half2));
+	cudaMalloc(&_error, size * sizeof(float));
 
 	float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(_zfactor*_zfactor) - 1.0);
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
 	const int bSize = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
 	cudaMalloc(&_B,  bSize * sizeof(float));
 
-	const int size = _width * _height;
 	const size_t blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
-	cudaMalloc(&_partialMax, blocks * sizeof(__half2));
-	cudaMalloc(&_partialMin, blocks * sizeof(__half2));
+	cudaMalloc(&_partialMax, (blocks+1)/2 * sizeof(__half2));
+	cudaMalloc(&_partialMin, (blocks+1)/2 * sizeof(__half2));
 	cudaMalloc(&_lastBlockCounter, blocks * sizeof(int));
 }
 
@@ -130,7 +130,6 @@ TV_L1::~TV_L1() {
  **/
 void TV_L1::runDualTVL1Multiscale(const float* I) {
 	const int size = _width * _height;
-	__half2 initValue{__float2half2_rn(0.0f)};
 	const size_t blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
 	const size_t threads = blocks == 1 ? size:THREADS_PER_BLOCK;
 
@@ -144,8 +143,6 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 	// setup initial values
 	cudaMemcpyAsync(_nx, &_width, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpyAsync(_ny, &_height, sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemsetAsync(_u1s + (_nscales-1 * size), *((int*)&initValue), size * sizeof(__half2));
-	cudaMemsetAsync(_u2s + (_nscales-1 * size), *((int*)&initValue), size * sizeof(__half2));
 
 	// normalize the images between 0 and 255
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);

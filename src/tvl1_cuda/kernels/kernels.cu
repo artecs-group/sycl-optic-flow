@@ -182,27 +182,31 @@ __global__ void columnConvolution(float* I, const float* B, const int* xDim, con
 
 
 __global__ void bicubicResample(const float* Is, float *Iout, const int* nxx, const int* nyy, 
-	const int* nx, const int* ny, float factor){
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int j = blockIdx.y * blockDim.y + threadIdx.y;
-	const float ii = (float)i / factor;
-	const float jj = (float)j / factor;
+	const int* nx, const int* ny, float factor)
+{
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < *nyy && j < *nxx) {
-        Iout[i * *nxx + j] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
+    if (idx < *nyy * *nxx) {
+		const int i = idx / *nxx;
+		const int j = idx % *nxx;
+		const float ii = (float)i / factor;
+		const float jj = (float)j / factor;
+        Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
     }
 }
 
 
 __global__ void bicubicResample2(const float* Is, float *Iout, const int* nxx, const int* nyy, 
-	const int* nx, const int* ny){
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int j = blockIdx.y * blockDim.y + threadIdx.y;
-	const float ii = (float)i / ((float)*nyy / *ny);
-	const float jj = (float)j / ((float)*nxx / *nx);
+	const int* nx, const int* ny)
+{
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < *nyy && j < *nxx) {
-        Iout[i * *nxx + j] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
+    if (idx < *nyy * *nxx) {
+		const int i = idx / *nxx;
+		const int j = idx % *nxx;
+		const float ii = (float)i / ((float)*nyy / *ny);
+		const float jj = (float)j / ((float)*nxx / *nx);
+        Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
     }
 }
 
@@ -298,7 +302,7 @@ __device__ float bicubicInterpolationAt(
 		return 0.0;
 
 	//obtain the interpolation points of the image
-	float v[4];
+	float v[4]{0};
 	const float pol[4][4] = {
 		{input[mx  + nx * my], input[mx  + nx * y], input[mx  + nx * dy], input[mx  + nx * ddy]},
 		{input[x   + nx * my], input[x   + nx * y], input[x   + nx * dy], input[x   + nx * ddy]},
@@ -324,14 +328,12 @@ __global__ void bicubicInterpolationWarp(
 	bool border_out // if true, put zeros outside the region
 )
 {
-	const int i = blockIdx.x * blockDim.x + threadIdx.x;
-	const int j = blockIdx.y * blockDim.y + threadIdx.y;
-	const int p = i * nx + j;
+	const int p = blockIdx.x * blockDim.x + threadIdx.x;
 
 	// obtain the bicubic interpolation at position (uu, vv)
 	if(p < nx*ny){
-		const float uu = j + u[p];
-		const float vv = i + v[p];
+		const float uu = (static_cast<int>(p%nx)) + u[p];
+		const float vv = (static_cast<int>(p/nx)) + v[p];
 		output[p] = bicubicInterpolationAt(input, uu, vv, nx, ny, border_out);
 	}
 }

@@ -38,7 +38,7 @@ TV_L1::TV_L1(int width, int height, float tau, float lambda, float theta, int ns
 	const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
 	_nscales = (N < nscales) ? N : nscales;
 
-	_hostU = new float[2 * _width*_height];
+	_hostU = new float[2 * _width*_height]{0};
 	_hNx   = new int[_nscales];
 	_hNy   = new int[_nscales];
 
@@ -132,8 +132,6 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 	// setup initial values
 	cudaMemcpyAsync(_nx, &_width, sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpyAsync(_ny, &_height, sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemsetAsync(_u1s + (_nscales-1 * size), 0.0f, size * sizeof(float));
-	cudaMemsetAsync(_u2s + (_nscales-1 * size), 0.0f, size * sizeof(float));
 
 	// normalize the images between 0 and 255
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
@@ -157,6 +155,8 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 		}
 		catch(const std::exception& e) { throw; }
 	}
+	cudaMemsetAsync(_u1s, 0.0f, size*_nscales * sizeof(float));
+	cudaMemsetAsync(_u2s, 0.0f, size*_nscales * sizeof(float));
 	cudaMemcpy(_hNx, _nx, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
 	cudaMemcpy(_hNy, _ny, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
 
@@ -200,12 +200,8 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 	cudaMemsetAsync(_p21, 0.0f, size * sizeof(float));
 	cudaMemsetAsync(_p22, 0.0f, size * sizeof(float));
 
-	const size_t TH2{THREADS_PER_BLOCK/4};
-	dim3 blocks(ny / TH2 + (ny % TH2 == 0 ? 0:1), nx / TH2 + (nx % TH2 == 0 ? 0:1));
-	dim3 threads(blocks.x == 1 ? ny:TH2, blocks.y == 1 ? nx:TH2);
-
-	const size_t blocks1 = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
-	const size_t threads1 = blocks1 == 1 ? size:THREADS_PER_BLOCK;
+	const size_t blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
+	const size_t threads = blocks == 1 ? size:THREADS_PER_BLOCK;
 
 	for (int warpings = 0; warpings < _warps; warpings++) {
 		// compute the warping of the target image and its derivatives
@@ -213,7 +209,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 		bicubicInterpolationWarp<<<blocks, threads>>>(_I1x, u1, u2, _I1wx, nx, ny, true);
 		bicubicInterpolationWarp<<<blocks, threads>>>(_I1y, u1, u2, _I1wy, nx, ny, true);
 
-		calculateRhoGrad<<<blocks1,threads1>>>(_I1wx, _I1wy, _I1w, u1, u2, I0, _grad, _rho_c, size);
+		calculateRhoGrad<<<blocks,threads>>>(_I1wx, _I1wy, _I1w, u1, u2, I0, _grad, _rho_c, size);
 
 		int n{0};
 		float error{INFINITY};
@@ -222,7 +218,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			n++;
 			// estimate the values of the variable (v1, v2)
 			// (thresholding opterator TH)
-			estimateThreshold<<<blocks1,threads1>>>(_rho_c, _I1wx, u1, _I1wy, u2, _grad, lT, size, _v1, _v2);
+			estimateThreshold<<<blocks,threads>>>(_rho_c, _I1wx, u1, _I1wy, u2, _grad, lT, size, _v1, _v2);
 
 			// compute the divergence of the dual variable (p1, p2)
 			divergence(_p11, _p12, _div_p1, nx ,ny);
@@ -230,7 +226,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 
 			// estimate the values of the optical flow (u1, u2)
 			cudaMemsetAsync(_error, 0.0f, size * sizeof(float));
-			estimateOpticalFlow<<<blocks1,threads1>>>(u1, u2, _v1, _v2, _div_p1, _div_p2, _theta, size, _error);
+			estimateOpticalFlow<<<blocks,threads>>>(u1, u2, _v1, _v2, _div_p1, _div_p2, _theta, size, _error);
 			cublasSasum(_handle, size, _error, 1, &error);
 			error /= size;
 
@@ -240,14 +236,14 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 
 			// estimate the values of the dual variable (p1, p2)
 			const float taut = _tau / _theta;
-			estimateGArgs<<<blocks1,threads1>>>(_div_p1, _div_p2, _v1, _v2, size, taut, _g1, _g2);
+			estimateGArgs<<<blocks,threads>>>(_div_p1, _div_p2, _v1, _v2, size, taut, _g1, _g2);
 
 			cublasSaxpy(_handle, size, &taut, _div_p1, 1, _p11, 1);
 			cublasSaxpy(_handle, size, &taut, _v1, 1, _p12, 1);
 			cublasSaxpy(_handle, size, &taut, _div_p2, 1, _p21, 1);
 			cublasSaxpy(_handle, size, &taut, _v2, 1, _p22, 1);
 
-			divideByG<<<blocks1,threads1>>>(_g1, _g2, size, _p11, _p12, _p21, _p22);
+			divideByG<<<blocks,threads>>>(_g1, _g2, size, _p11, _p12, _p21, _p22);
 		}
 	}
 }
@@ -473,9 +469,9 @@ void TV_L1::zoomOut(
 	catch(const std::exception& e) { throw; }
 
 	// re-sample the image using bicubic interpolation
-	const size_t TH2{THREADS_PER_BLOCK/4};
-	dim3 blocks(sy / TH2 + (sy % TH2 == 0 ? 0:1), sx / TH2 + (sx % TH2 == 0 ? 0:1));
-	dim3 threads(blocks.x == 1 ? sy:TH2, blocks.y == 1 ? sx:TH2);
+	size_t blocks, threads;
+	blocks = (sx*sy) / THREADS_PER_BLOCK + ((sx*sy) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = (blocks == 1) ? (sx*sy) : THREADS_PER_BLOCK;
 	bicubicResample<<<blocks, threads>>>(Is, Iout, nxx, nyy, nx, ny, factor);
 }
 
@@ -497,8 +493,8 @@ void TV_L1::zoomIn(
 	cudaMemcpyAsync(&sy, nyy, sizeof(int), cudaMemcpyDeviceToHost);
 
 	// re-sample the image using bicubic interpolation	
-	const size_t TH2{THREADS_PER_BLOCK/4};
-	dim3 blocks(sy / TH2 + (sy % TH2 == 0 ? 0:1), sx / TH2 + (sx % TH2 == 0 ? 0:1));
-	dim3 threads(blocks.x == 1 ? sy:TH2, blocks.y == 1 ? sx:TH2);
+	size_t blocks, threads;
+	blocks = (sx*sy) / THREADS_PER_BLOCK + ((sx*sy) % THREADS_PER_BLOCK == 0 ? 0:1);
+	threads = (blocks == 1) ? (sx*sy) : THREADS_PER_BLOCK;
 	bicubicResample2<<<blocks, threads>>>(I, Iout, nxx, nyy, nx, ny);
 }

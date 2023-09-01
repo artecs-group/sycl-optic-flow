@@ -155,10 +155,11 @@ void TV_L1::runDualTVL1Multiscale(const float* I) {
 		}
 		catch(const std::exception& e) { throw; }
 	}
-	cudaMemsetAsync(_u1s, 0.0f, size*_nscales * sizeof(float));
-	cudaMemsetAsync(_u2s, 0.0f, size*_nscales * sizeof(float));
+
 	cudaMemcpy(_hNx, _nx, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
 	cudaMemcpy(_hNy, _ny, _nscales * sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemsetAsync(_u1s + (size*(_nscales-1)), 0.0f, _hNx[_nscales-1]*_hNy[_nscales-1] * sizeof(float));
+	cudaMemsetAsync(_u2s + (size*(_nscales-1)), 0.0f, _hNx[_nscales-1]*_hNy[_nscales-1] * sizeof(float));
 
 	const float invZfactor{1 / _zfactor};
 	// pyramidal structure for computing the optical flow

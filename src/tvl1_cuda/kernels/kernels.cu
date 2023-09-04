@@ -64,7 +64,7 @@ __global__ void rowsForwardGradient(const float* f, float* fx, float* fy, size_t
 
 
 __global__ void columnsForwardGradient(const float* f, float* fx, float* fy, size_t nx, size_t ny){
-	const int i = blockIdx.x * blockDim.x + threadIdx.x + 1;
+	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
 	const int p = i * nx-1;
 
 	if(i < ny){

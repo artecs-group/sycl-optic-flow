@@ -128,6 +128,7 @@ void TV_L1::runDualTVL1Multiscale(const float *I) {
 
 	// swap image
     _queue.memcpy(_I0s, _imBuffer, size * sizeof(float));
+    _queue.wait();
 
     // send image to the device
     _queue.memcpy(_imBuffer, I, size * sizeof(float));
@@ -137,7 +138,7 @@ void TV_L1::runDualTVL1Multiscale(const float *I) {
     _queue.memcpy(_nx, &_width, sizeof(int));
     _queue.memcpy(_ny, &_height, sizeof(int));
 
-        // normalize the images between 0 and 255
+    // normalize the images between 0 and 255
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
 
 	// pre-smooth the original images
@@ -196,6 +197,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 {
     const size_t size = nx * ny;
 	const float lT = _lambda * _theta;
+    const float taut = _tau / _theta;
 
 	centeredGradient(I1, _I1x, _I1y, nx, ny);
 
@@ -213,6 +215,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
         bicubicInterpolationWarp(I1, u1, u2, _I1w, nx, ny, true, blocks, threads, _queue);
         bicubicInterpolationWarp(_I1x, u1, u2, _I1wx, nx, ny, true, blocks, threads, _queue);
         bicubicInterpolationWarp(_I1y, u1, u2, _I1wy, nx, ny, true, blocks, threads, _queue);
+        _queue.wait();
 
         calculateRhoGrad(_I1wx, _I1wy, _I1w, u1, u2, I0, _grad, _rho_c, size, blocks, threads, _queue);
 
@@ -232,8 +235,7 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			// estimate the values of the optical flow (u1, u2)
             _queue.memset(_error, 0.0f, size * sizeof(float));
             estimateOpticalFlow(u1, u2, _v1, _v2, _div_p1, _div_p2, _theta, size, _error, blocks, threads, _queue);
-            oneapi::mkl::blas::column_major::asum(_queue, size, _error, 1, _lError);
-            _queue.wait();
+            oneapi::mkl::blas::column_major::asum(_queue, size, _error, 1, _lError).wait();
             *_lError /= size;
 
 			// compute the gradient of the optical flow (Du1, Du2)
@@ -241,13 +243,13 @@ void TV_L1::dualTVL1(const float* I0, const float* I1, float* u1, float* u2, int
 			forwardGradient(u2, _div_p2, _v2, nx ,ny);
 
 			// estimate the values of the dual variable (p1, p2)
-			const float taut = _tau / _theta;
             estimateGArgs(_div_p1, _div_p2, _v1, _v2, size, taut, _g1, _g2, blocks, threads, _queue);
 
             oneapi::mkl::blas::column_major::axpy(_queue, size, taut, _div_p1, 1, _p11, 1);
             oneapi::mkl::blas::column_major::axpy(_queue, size, taut, _v1, 1, _p12, 1);
             oneapi::mkl::blas::column_major::axpy(_queue, size, taut, _div_p2, 1, _p21, 1);
             oneapi::mkl::blas::column_major::axpy(_queue, size, taut, _v2, 1, _p22, 1);
+            _queue.wait();
 
             divideByG(_g1, _g2, size, _p11, _p12, _p21, _p22, blocks, threads, _queue);
         }
@@ -272,15 +274,14 @@ void TV_L1::imageNormalization(
     oneapi::mkl::blas::column_major::iamax(_queue, size, I0, 1, _maxMin);
     oneapi::mkl::blas::column_major::iamax(_queue, size, I1, 1, _maxMin + 1);
     oneapi::mkl::blas::column_major::iamin(_queue, size, I0, 1, _maxMin + 2);
-    oneapi::mkl::blas::column_major::iamin(_queue, size, I1, 1, _maxMin + 3);
-    _queue.wait();
+    oneapi::mkl::blas::column_major::iamin(_queue, size, I1, 1, _maxMin + 3).wait();
 
     // obtain the max and min of both images
 	float max0, max1, min0, min1;
     _queue.memcpy(&max0, I0 + _maxMin[0], sizeof(float));
     _queue.memcpy(&max1, I1 + _maxMin[1], sizeof(float));
     _queue.memcpy(&min0, I0 + _maxMin[2], sizeof(float));
-    _queue.memcpy(&min1, I1 + _maxMin[3], sizeof(float));
+    _queue.memcpy(&min1, I1 + _maxMin[3], sizeof(float)).wait();
 
     const float max = std::max(max0, max1);
 	const float min = std::min(min0, min1);
@@ -311,18 +312,22 @@ void TV_L1::divergence(
 	int blocks = ((nx-1)*(ny-1) - 1) / THREADS_PER_BLOCK + (((nx-1)*(ny-1) - 1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	int threads = blocks == 1 ? ((nx-1)*(ny-1) - 1) : THREADS_PER_BLOCK;
     bodyDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
+    _queue.wait();
 
     // compute the divergence on the first and last rows
 	blocks = (nx-2) / THREADS_PER_BLOCK + ((nx-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (nx-2) : THREADS_PER_BLOCK;
     edgeRowsDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
+    _queue.wait();
 
     // compute the divergence on the first and last columns
 	blocks = (ny-2) / THREADS_PER_BLOCK + ((ny-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (ny-2) : THREADS_PER_BLOCK;
     edgeColumnsDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
+    _queue.wait();
 
     cornersDivergence(v1, v2, div, nx, ny, _queue);
+    _queue.wait();
 }
 
 
@@ -404,7 +409,7 @@ void TV_L1::gaussian(float *I,        // input/output image
 	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
 	int hXdim{0}, hYdim{0};
     _queue.memcpy(&hXdim, xdim, sizeof(int));
-    _queue.memcpy(&hYdim, ydim, sizeof(int));
+    _queue.memcpy(&hYdim, ydim, sizeof(int)).wait();
 
     if (size > hXdim) {
         std::cerr << "Gaussian smooth: sigma too large." << std::endl;
@@ -451,8 +456,8 @@ void TV_L1::zoomOut(const float *I, // input image
 {
     int sx, sy;
     _queue.memcpy(&sx, nx, sizeof(int));
-    _queue.memcpy(&sy, ny, sizeof(int));
-    _queue.memcpy(Is, I, sx * sy * sizeof(float)).wait();
+    _queue.memcpy(&sy, ny, sizeof(int)).wait();
+    _queue.memcpy(Is, I, sx * sy * sizeof(float));
 
     // compute the size of the zoomed image
 	sx = (int)(sx * factor + 0.5);

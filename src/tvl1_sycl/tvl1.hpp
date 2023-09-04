@@ -36,7 +36,8 @@ private:
     float* _hostU;
 
 	float *_I0s, *_I1s, *_u1s, *_u2s, *_imBuffer;
-	int *_nx, *_ny, *_nxy, *_hNx, *_hNy, *_maxMin;
+	int *_nx, *_ny, *_nxy, *_hNx, *_hNy; 
+    int64_t *_maxMin;
 
 	float *_I1x, *_I1y, *_I1w, *_I1wx, *_I1wy, *_rho_c, *_v1, *_v2, *_p11, *_p12, 
         *_p21, *_p22, *_grad, *_div_p1, *_div_p2, *_g1, *_g2, *_B, *_error, *_lError;

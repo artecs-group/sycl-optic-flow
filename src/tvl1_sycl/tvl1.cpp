@@ -3,6 +3,7 @@
 #include <iostream>
 #include <algorithm>
 #include <limits>
+#include "oneapi/mkl.hpp"
 
 #include "tvl1.hpp"
 #include "kernels/kernels.hpp"
@@ -73,7 +74,7 @@ TV_L1::TV_L1(sycl::queue queue, int width, int height, float tau, float lambda, 
     _g2 = sycl::malloc_device<float>(_width * _height, _queue);
     _error = sycl::malloc_device<float>(_width * _height, _queue);
     _lError = sycl::malloc_shared<float>(1, _queue);
-    _maxMin = sycl::malloc_shared<float>(4, _queue);
+    _maxMin = sycl::malloc_shared<int64_t>(4, _queue);
 
     float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(_zfactor*_zfactor) - 1.0);
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
@@ -384,7 +385,7 @@ void TV_L1::centeredGradient(
     edgeColumnsGradient(input, dx, dy, nx, ny, blocks, threads, _queue);
 
     // compute the gradient at the four corners
-    cornersGradient(input, dx, dy, nx, ny);
+    cornersGradient(input, dx, dy, nx, ny, _queue);
 }
 
 

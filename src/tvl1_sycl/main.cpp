@@ -56,7 +56,7 @@ App::App(const CommandLineParser& cmd)
 
 void App::initSYCL() {
     // Configuration details: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
-    m_syclQueue = sycl::queue(cl::sycl::default_selector_v);
+    m_syclQueue = sycl::queue(sycl::default_selector_v);
 }
 
 
@@ -125,7 +125,7 @@ int App::run() {
     std::cout << "Initializing..." << std::endl;
 
     initSYCL();
-    const std::string devName = m_syclQueue.get_device().get_info<info::device::name>();
+    const std::string devName = m_syclQueue.get_device().get_info<sycl::info::device::name>();
 
     initVideoSource();
 

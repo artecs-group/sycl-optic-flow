@@ -127,16 +127,15 @@ void TV_L1::runDualTVL1Multiscale(const float *I) {
     const int size = _width * _height;
 
 	// swap image
-    _queue.memcpy(_I0s, _imBuffer, size * sizeof(float));
-    _queue.wait();
+    _queue.memcpy(_I0s, _imBuffer, size * sizeof(float)).wait();
 
     // send image to the device
-    _queue.memcpy(_imBuffer, I, size * sizeof(float));
-    _queue.memcpy(_I1s, _imBuffer, size * sizeof(float));
+    _queue.memcpy(_imBuffer, I, size * sizeof(float)).wait();
+    _queue.memcpy(_I1s, _imBuffer, size * sizeof(float)).wait();
 
     // setup initial values
-    _queue.memcpy(_nx, &_width, sizeof(int));
-    _queue.memcpy(_ny, &_height, sizeof(int));
+    _queue.memcpy(_nx, &_width, sizeof(int)).wait();
+    _queue.memcpy(_ny, &_height, sizeof(int)).wait();
 
     // normalize the images between 0 and 255
 	imageNormalization(_I0s, _I1s, _I0s, _I1s, size);
@@ -161,7 +160,7 @@ void TV_L1::runDualTVL1Multiscale(const float *I) {
 		catch(const std::exception& e) { throw; }
 	}
 
-    _queue.memcpy(_hNx, _nx, _nscales * sizeof(int));
+    _queue.memcpy(_hNx, _nx, _nscales * sizeof(int)).wait();
     _queue.memcpy(_hNy, _ny, _nscales * sizeof(int)).wait();
     _queue.memset(_u1s + (size * (_nscales - 1)), 0.0f, _hNx[_nscales - 1] * _hNy[_nscales - 1] * sizeof(float));
     _queue.memset(_u2s + (size * (_nscales - 1)), 0.0f, _hNx[_nscales - 1] * _hNy[_nscales - 1] * sizeof(float));
@@ -281,7 +280,8 @@ void TV_L1::imageNormalization(
     _queue.memcpy(&max0, I0 + _maxMin[0], sizeof(float));
     _queue.memcpy(&max1, I1 + _maxMin[1], sizeof(float));
     _queue.memcpy(&min0, I0 + _maxMin[2], sizeof(float));
-    _queue.memcpy(&min1, I1 + _maxMin[3], sizeof(float)).wait();
+    _queue.memcpy(&min1, I1 + _maxMin[3], sizeof(float));
+    _queue.wait();
 
     const float max = std::max(max0, max1);
 	const float min = std::min(min0, min1);
@@ -312,19 +312,16 @@ void TV_L1::divergence(
 	int blocks = ((nx-1)*(ny-1) - 1) / THREADS_PER_BLOCK + (((nx-1)*(ny-1) - 1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	int threads = blocks == 1 ? ((nx-1)*(ny-1) - 1) : THREADS_PER_BLOCK;
     bodyDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
-    _queue.wait();
 
     // compute the divergence on the first and last rows
 	blocks = (nx-2) / THREADS_PER_BLOCK + ((nx-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (nx-2) : THREADS_PER_BLOCK;
     edgeRowsDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
-    _queue.wait();
 
     // compute the divergence on the first and last columns
 	blocks = (ny-2) / THREADS_PER_BLOCK + ((ny-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (ny-2) : THREADS_PER_BLOCK;
     edgeColumnsDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
-    _queue.wait();
 
     cornersDivergence(v1, v2, div, nx, ny, _queue);
     _queue.wait();
@@ -409,7 +406,8 @@ void TV_L1::gaussian(float *I,        // input/output image
 	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
 	int hXdim{0}, hYdim{0};
     _queue.memcpy(&hXdim, xdim, sizeof(int));
-    _queue.memcpy(&hYdim, ydim, sizeof(int)).wait();
+    _queue.memcpy(&hYdim, ydim, sizeof(int));
+    _queue.wait();
 
     if (size > hXdim) {
         std::cerr << "Gaussian smooth: sigma too large." << std::endl;
@@ -424,7 +422,8 @@ void TV_L1::gaussian(float *I,        // input/output image
     // normalize the 1D convolution kernel
 	float hB, norm;
     oneapi::mkl::blas::column_major::asum(_queue, size, B, 1, _lError);
-    _queue.memcpy(&hB, B, sizeof(float)).wait();
+    _queue.memcpy(&hB, B, sizeof(float));
+    _queue.wait();
     norm = _lError[0];
     norm = 1 / (norm * 2 - hB);
     oneapi::mkl::blas::column_major::scal(_queue, size, norm, B, 1);
@@ -456,7 +455,8 @@ void TV_L1::zoomOut(const float *I, // input image
 {
     int sx, sy;
     _queue.memcpy(&sx, nx, sizeof(int));
-    _queue.memcpy(&sy, ny, sizeof(int)).wait();
+    _queue.memcpy(&sy, ny, sizeof(int));
+    _queue.wait();
     _queue.memcpy(Is, I, sx * sy * sizeof(float));
 
     // compute the size of the zoomed image
@@ -465,6 +465,7 @@ void TV_L1::zoomOut(const float *I, // input image
 
     _queue.memcpy(nxx, &sx, sizeof(int));
     _queue.memcpy(nyy, &sy, sizeof(int));
+    _queue.wait();
 
     // compute the Gaussian sigma for smoothing
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
@@ -495,7 +496,8 @@ void TV_L1::zoomIn(
 {
     int sx, sy;
     _queue.memcpy(&sx, nxx, sizeof(int));
-    _queue.memcpy(&sy, nyy, sizeof(int)).wait();
+    _queue.memcpy(&sy, nyy, sizeof(int));
+    _queue.wait();
 
     // re-sample the image using bicubic interpolation	
 	size_t blocks, threads;

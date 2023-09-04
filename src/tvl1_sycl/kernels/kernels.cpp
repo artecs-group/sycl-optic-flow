@@ -14,8 +14,9 @@ void bodyDivergence(const float *v1, const float *v2, float *div,
                         [=](sycl::nd_item<3> item)
     {
         const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
-        if(i < (nx-1)*(ny-1))
+        if(i < (nx-1)*(ny-1)) {
 		    div[i]  = (v1[i] - v1[i-1]) + (v2[i] - v2[i-nx]);
+        }
     });
 }
 

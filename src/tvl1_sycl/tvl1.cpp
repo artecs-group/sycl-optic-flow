@@ -149,16 +149,7 @@ void TV_L1::runDualTVL1Multiscale(const float *I) {
 	// create the scales
 	for (int s = 1; s < _nscales; s++)
 	{
-        _queue.submit([&](sycl::handler &cgh) {
-            auto _nx_s_ct0 = _nx + (s - 1);
-            auto _ny_s_ct1 = _ny + (s - 1);
-            auto _nx_s_ct2 = _nx + s;
-            auto _ny_s_ct3 = _ny + s;
-
-            cgh.parallel_for(1, [=](sycl::item<1> i) {
-                zoomSize(_nx_s_ct0, _ny_s_ct1, _nx_s_ct2, _ny_s_ct3, _zfactor);
-            });
-        });
+        zoomSize(_nx + (s - 1), _ny + (s - 1), _nx + s, _ny + s, _zfactor, _queue);
 
         // zoom in the images to create the pyramidal structure
 		try {
@@ -190,7 +181,7 @@ void TV_L1::runDualTVL1Multiscale(const float *I) {
 	dualTVL1(_I0s, _I1s, _u1s, _u2s, _hNx[0], _hNy[0]);
 
 	// write back to the host the result
-    _queue.memcpy(_hostU, _u1s, size * sizeof(float)).wait();
+    _queue.memcpy(_hostU, _u1s, size * sizeof(float));
     _queue.memcpy(_hostU + size, _u2s, size * sizeof(float)).wait();
 }
 
@@ -315,61 +306,22 @@ void TV_L1::divergence(
 		const int ny     // image height
 )
 {
-    dpct::device_ext &dev_ct1 = dpct::get_current_device();
-    sycl::queue &q_ct1 = dev_ct1.default_queue();
-        // compute the divergence on the central body of the image
+    // compute the divergence on the central body of the image
 	int blocks = ((nx-1)*(ny-1) - 1) / THREADS_PER_BLOCK + (((nx-1)*(ny-1) - 1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	int threads = blocks == 1 ? ((nx-1)*(ny-1) - 1) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:9: The work-group size passed to the SYCL kernel may exceed the
-        limit. To get the device limit, query info::device::max_work_group_size.
-        Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   bodyDivergence(v1, v2, div, nx, ny,
-                                                  item_ct1);
-                           });
+    bodyDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
 
-        // compute the divergence on the first and last rows
+    // compute the divergence on the first and last rows
 	blocks = (nx-2) / THREADS_PER_BLOCK + ((nx-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (nx-2) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:10: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   edgeRowsDivergence(v1, v2, div, nx, ny,
-                                                      item_ct1);
-                           });
+    edgeRowsDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
 
-        // compute the divergence on the first and last columns
+    // compute the divergence on the first and last columns
 	blocks = (ny-2) / THREADS_PER_BLOCK + ((ny-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (ny-2) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:11: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   edgeColumnsDivergence(v1, v2, div, nx, ny,
-                                                         item_ct1);
-                           });
+    edgeColumnsDivergence(v1, v2, div, nx, ny, blocks, threads, _queue);
 
-        q_ct1.parallel_for(
-            sycl::nd_range<3>(sycl::range<3>(1, 1, 1), sycl::range<3>(1, 1, 1)),
-            [=](sycl::nd_item<3> item_ct1) {
-                    cornersDivergence(v1, v2, div, nx, ny);
-            });
+    cornersDivergence(v1, v2, div, nx, ny, _queue);
 }
 
 
@@ -384,59 +336,24 @@ void TV_L1::forwardGradient(
 		const int ny    //image height
 		)
 {
-    dpct::device_ext &dev_ct1 = dpct::get_current_device();
-    sycl::queue &q_ct1 = dev_ct1.default_queue();
-        // compute the gradient on the central body of the image
+    // compute the gradient on the central body of the image
 	int blocks = (nx-1)*(ny-1) / THREADS_PER_BLOCK + ((nx-1)*(ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	int threads = blocks == 1 ? (nx-1)*(ny-1) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:12: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   bodyForwardGradient(f, fx, fy, nx, ny,
-                                                       item_ct1);
-                           });
+    bodyForwardGradient(f, fx, fy, nx, ny, blocks, threads, _queue);
 
-        // compute the gradient on the last row
+    // compute the gradient on the last row
 	blocks = (nx-1) / THREADS_PER_BLOCK + ((nx-1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (nx-1) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:13: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   rowsForwardGradient(f, fx, fy, nx, ny,
-                                                       item_ct1);
-                           });
+    rowsForwardGradient(f, fx, fy, nx, ny, blocks, threads, _queue);
 
-        // compute the gradient on the last column
+    // compute the gradient on the last column
 	blocks = (ny-1) / THREADS_PER_BLOCK + ((ny-1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (ny-1) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:14: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   columnsForwardGradient(f, fx, fy, nx, ny,
-                                                          item_ct1);
-                           });
+    columnsForwardGradient(f, fx, fy, nx, ny, blocks, threads, _queue);
 
-        // corners
-        q_ct1.memset(fx + (ny * nx - 1), 0.0f, sizeof(float));
-        q_ct1.memset(fy + (ny * nx - 1), 0.0f, sizeof(float));
+    // corners
+    _queue.memset(fx + (ny * nx - 1), 0.0f, sizeof(float));
+    _queue.memset(fy + (ny * nx - 1), 0.0f, sizeof(float));
 }
 
 
@@ -451,62 +368,23 @@ void TV_L1::centeredGradient(
 		const int ny         //image height
 		)
 {
-    dpct::device_ext &dev_ct1 = dpct::get_current_device();
-    sycl::queue &q_ct1 = dev_ct1.default_queue();
-        // compute the gradient on the center body of the image
+    // compute the gradient on the center body of the image
 	int blocks = ((nx-1)*(ny-1) - 1) / THREADS_PER_BLOCK + (((nx-1)*(ny-1) - 1) % THREADS_PER_BLOCK == 0 ? 0:1);
 	int threads = blocks == 1 ? ((nx-1)*(ny-1) - 1) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:15: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   bodyGradient(input, dx, dy, nx, ny,
-                                                item_ct1);
-                           });
+    bodyGradient(input, dx, dy, nx, ny, blocks, threads, _queue);
 
-        // compute the gradient on the first and last rows
+    // compute the gradient on the first and last rows
 	blocks = (nx-2) / THREADS_PER_BLOCK + ((nx-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (nx-2) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:16: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   edgeRowsGradient(input, dx, dy, nx, ny,
-                                                    item_ct1);
-                           });
+    edgeRowsGradient(input, dx, dy, nx, ny, blocks, threads, _queue);
 
-        // compute the gradient on the first and last columns
+    // compute the gradient on the first and last columns
 	blocks = (ny-2) / THREADS_PER_BLOCK + ((ny-2) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = blocks == 1 ? (ny-2) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:17: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   edgeColumnsGradient(input, dx, dy, nx, ny,
-                                                       item_ct1);
-                           });
+    edgeColumnsGradient(input, dx, dy, nx, ny, blocks, threads, _queue);
 
-        // compute the gradient at the four corners
-        q_ct1.parallel_for(
-            sycl::nd_range<3>(sycl::range<3>(1, 1, 1), sycl::range<3>(1, 1, 1)),
-            [=](sycl::nd_item<3> item_ct1) {
-                    cornersGradient(input, dx, dy, nx, ny);
-            });
+    // compute the gradient at the four corners
+    cornersGradient(input, dx, dy, nx, ny);
 }
 
 
@@ -518,92 +396,42 @@ void TV_L1::gaussian(float *I,        // input/output image
                      const int *xdim, // image width
                      const int *ydim, // image height
                      float sigma,     // Gaussian sigma
-                     float *buffer, dpct::queue_ptr *handle)
+                     float *buffer)
 {
-    dpct::device_ext &dev_ct1 = dpct::get_current_device();
-    sycl::queue &q_ct1 = dev_ct1.default_queue();
-        const float den  = 2*sigma*sigma;
+    const float den  = 2*sigma*sigma;
 	const float sPi = sigma * std::sqrt(M_PI * 2);
 	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
 	int hXdim{0}, hYdim{0};
-        q_ct1.memcpy(&hXdim, xdim, sizeof(int));
-        q_ct1.memcpy(&hYdim, ydim, sizeof(int));
+    _queue.memcpy(&hXdim, xdim, sizeof(int));
+    _queue.memcpy(&hYdim, ydim, sizeof(int));
 
-        if (size > hXdim) {
-		std::cerr << "Gaussian smooth: sigma too large." << std::endl;
-		throw;
+    if (size > hXdim) {
+        std::cerr << "Gaussian smooth: sigma too large." << std::endl;
+        throw;
 	}
 
 	// compute the coefficients of the 1D convolution kernel
 	int blocks = size / THREADS_PER_BLOCK + (size % THREADS_PER_BLOCK == 0 ? 0:1);
 	int threads = (blocks == 1) ? size : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:18: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   convolution1D(B, size, sPi, den, item_ct1);
-                           });
+    convolution1D(B, size, sPi, den, blocks, threads, _queue);
 
-        // normalize the 1D convolution kernel
-	float norm, hB;
-        float *res_temp_ptr_ct10 = &norm;
-        if (sycl::get_pointer_type(&norm, *handle->get_context()) !=
-                sycl::usm::alloc::device &&
-            sycl::get_pointer_type(&norm, *handle->get_context()) !=
-                sycl::usm::alloc::shared) {
-                res_temp_ptr_ct10 =
-                    sycl::malloc_shared<float>(1, dpct::get_default_queue());
-        }
-        oneapi::mkl::blas::column_major::asum(**handle, size, B, 1,
-                                              res_temp_ptr_ct10);
-        if (sycl::get_pointer_type(&norm, *handle->get_context()) !=
-                sycl::usm::alloc::device &&
-            sycl::get_pointer_type(&norm, *handle->get_context()) !=
-                sycl::usm::alloc::shared) {
-                *handle->wait();
-                norm = *res_temp_ptr_ct10;
-                sycl::free(res_temp_ptr_ct10, dpct::get_default_queue());
-        }
-        q_ct1.memcpy(&hB, B, sizeof(float));
-        norm = 1 / (norm * 2 - hB);
-        oneapi::mkl::blas::column_major::scal(**handle, size, norm, B, 1);
+    // normalize the 1D convolution kernel
+	float hB, norm;
+    oneapi::mkl::blas::column_major::asum(_queue, size, B, 1, _lError);
+    _queue.memcpy(&hB, B, sizeof(float)).wait();
+    norm = _lError[0];
+    norm = 1 / (norm * 2 - hB);
+    oneapi::mkl::blas::column_major::scal(_queue, size, norm, B, 1);
 
-        blocks = hYdim / THREADS_PER_BLOCK + (hYdim % THREADS_PER_BLOCK == 0 ? 0:1);
+    blocks = hYdim / THREADS_PER_BLOCK + (hYdim % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = (blocks == 1) ? hYdim : THREADS_PER_BLOCK;
 	// convolution of each line of the input image
-    /*
-    DPCT1049:19: The work-group size passed to the SYCL kernel may exceed the
-    limit. To get the device limit, query info::device::max_work_group_size.
-    Adjust the work-group size if needed.
-    */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   lineConvolution(I, B, xdim, ydim, size,
-                                                   buffer, item_ct1);
-                           });
+    lineConvolution(I, B, xdim, ydim, size, buffer, blocks, threads, _queue);
 
-        blocks = hXdim / THREADS_PER_BLOCK + (hXdim % THREADS_PER_BLOCK == 0 ? 0:1);
+    blocks = hXdim / THREADS_PER_BLOCK + (hXdim % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = (blocks == 1) ? hXdim : THREADS_PER_BLOCK;
 	// convolution of each column of the input image
-    /*
-    DPCT1049:20: The work-group size passed to the SYCL kernel may exceed the
-    limit. To get the device limit, query info::device::max_work_group_size.
-    Adjust the work-group size if needed.
-    */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   columnConvolution(I, B, xdim, ydim, size,
-                                                     buffer, item_ct1);
-                           });
+    columnConvolution(I, B, xdim, ydim, size, buffer, blocks, threads, _queue);
 }
 
 
@@ -618,45 +446,32 @@ void TV_L1::zoomOut(const float *I, // input image
                     int *nxx, int *nyy,
                     const float factor, // zoom factor between 0 and 1
                     float *Is,          // temporary working image
-                    float *gaussBuffer, dpct::queue_ptr *handle)
+                    float *gaussBuffer)
 {
-    dpct::device_ext &dev_ct1 = dpct::get_current_device();
-    sycl::queue &q_ct1 = dev_ct1.default_queue();
-        int sx, sy;
-        q_ct1.memcpy(&sx, nx, sizeof(int));
-        q_ct1.memcpy(&sy, ny, sizeof(int));
-        q_ct1.memcpy(Is, I, sx * sy * sizeof(float));
+    int sx, sy;
+    _queue.memcpy(&sx, nx, sizeof(int));
+    _queue.memcpy(&sy, ny, sizeof(int));
+    _queue.memcpy(Is, I, sx * sy * sizeof(float)).wait();
 
-        // compute the size of the zoomed image
+    // compute the size of the zoomed image
 	sx = (int)(sx * factor + 0.5);
 	sy = (int)(sy * factor + 0.5);
 
-        q_ct1.memcpy(nxx, &sx, sizeof(int));
-        q_ct1.memcpy(nyy, &sy, sizeof(int));
+    _queue.memcpy(nxx, &sx, sizeof(int));
+    _queue.memcpy(nyy, &sy, sizeof(int));
 
-        // compute the Gaussian sigma for smoothing
+    // compute the Gaussian sigma for smoothing
 	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
 
 	// pre-smooth the image
-	try { gaussian(Is, B, nx, ny, sigma, gaussBuffer, handle); }
+	try { gaussian(Is, B, nx, ny, sigma, gaussBuffer); }
 	catch(const std::exception& e) { throw; }
 
 	// re-sample the image using bicubic interpolation
 	size_t blocks, threads;
 	blocks = (sx*sy) / THREADS_PER_BLOCK + ((sx*sy) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = (blocks == 1) ? (sx*sy) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:21: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   bicubicResample(Is, Iout, nxx, nyy, nx, ny,
-                                                   factor, item_ct1);
-                           });
+    bicubicResample(Is, Iout, nxx, nyy, nx, ny, factor, blocks, threads, _queue);
 }
 
 
@@ -672,26 +487,13 @@ void TV_L1::zoomIn(
 	const int* nyy         // height of the zoomed image
 )
 {
-    dpct::device_ext &dev_ct1 = dpct::get_current_device();
-    sycl::queue &q_ct1 = dev_ct1.default_queue();
-        int sx, sy;
-        q_ct1.memcpy(&sx, nxx, sizeof(int));
-        q_ct1.memcpy(&sy, nyy, sizeof(int));
+    int sx, sy;
+    _queue.memcpy(&sx, nxx, sizeof(int));
+    _queue.memcpy(&sy, nyy, sizeof(int)).wait();
 
-        // re-sample the image using bicubic interpolation	
+    // re-sample the image using bicubic interpolation	
 	size_t blocks, threads;
 	blocks = (sx*sy) / THREADS_PER_BLOCK + ((sx*sy) % THREADS_PER_BLOCK == 0 ? 0:1);
 	threads = (blocks == 1) ? (sx*sy) : THREADS_PER_BLOCK;
-        /*
-        DPCT1049:22: The work-group size passed to the SYCL kernel may exceed
-        the limit. To get the device limit, query
-        info::device::max_work_group_size. Adjust the work-group size if needed.
-        */
-        q_ct1.parallel_for(sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                                                 sycl::range<3>(1, 1, threads),
-                                             sycl::range<3>(1, 1, threads)),
-                           [=](sycl::nd_item<3> item_ct1) {
-                                   bicubicResample2(I, Iout, nxx, nyy, nx, ny,
-                                                    item_ct1);
-                           });
+    bicubicResample2(I, Iout, nxx, nyy, nx, ny, blocks, threads, _queue);
 }

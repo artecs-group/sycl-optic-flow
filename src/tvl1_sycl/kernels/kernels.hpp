@@ -7,58 +7,58 @@
 
 constexpr float GRAD_IS_ZERO{1E-10};
 
-SYCL_EXTERNAL void bodyGradient(const float *input, float *dx, float *dy,
+void bodyGradient(const float *input, float *dx, float *dy,
                                 int nx, int ny,
-                                const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void edgeRowsGradient(const float *input, float *dx, float *dy,
+                                int blocks, int threads, sycl::queue queue);
+void edgeRowsGradient(const float *input, float *dx, float *dy,
                                     int nx, int ny,
-                                    const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void edgeColumnsGradient(const float *input, float *dx, float *dy,
+                                    int blocks, int threads, sycl::queue queue);
+void edgeColumnsGradient(const float *input, float *dx, float *dy,
                                        int nx, int ny,
-                                       const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void cornersGradient(const float *input, float *dx, float *dy,
-                                   int nx, int ny);
-SYCL_EXTERNAL void convolution1D(float *B, int size, float sPi, float den,
-                                 const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void lineConvolution(float *I, const float *B, const int *xDim,
+                                       int blocks, int threads, sycl::queue queue);
+void cornersGradient(const float *input, float *dx, float *dy,
+                                   int nx, int ny, sycl::queue queue);
+void convolution1D(float *B, int size, float sPi, float den,
+                                 int blocks, int threads, sycl::queue queue);
+void lineConvolution(float *I, const float *B, const int *xDim,
                                    const int *yDim, int size, float *buffer,
-                                   const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void columnConvolution(float *I, const float *B, const int *xDim,
+                                   int blocks, int threads, sycl::queue queue);
+void columnConvolution(float *I, const float *B, const int *xDim,
                                      const int *yDim, int size, float *buffer,
-                                     const sycl::nd_item<3> &item_ct1);
+                                     int blocks, int threads, sycl::queue queue);
 
-SYCL_EXTERNAL void cornersDivergence(const float *v1, const float *v2,
-                                     float *div, int nx, int ny);
-SYCL_EXTERNAL void edgeColumnsDivergence(const float *v1, const float *v2,
+void cornersDivergence(const float *v1, const float *v2,
+                                     float *div, int nx, int ny, sycl::queue queue);
+void edgeColumnsDivergence(const float *v1, const float *v2,
                                          float *div, int nx, int ny,
-                                         const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void edgeRowsDivergence(const float *v1, const float *v2,
+                                         int blocks, int threads, sycl::queue queue);
+void edgeRowsDivergence(const float *v1, const float *v2,
                                       float *div, int nx, int ny,
-                                      const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void bodyDivergence(const float *v1, const float *v2, float *div,
+                                      int blocks, int threads, sycl::queue queue);
+void bodyDivergence(const float *v1, const float *v2, float *div,
                                   int nx, int ny,
-                                  const sycl::nd_item<3> &item_ct1);
+                                  int blocks, int threads, sycl::queue queue);
 
-SYCL_EXTERNAL void bodyForwardGradient(const float *f, float *fx, float *fy,
+void bodyForwardGradient(const float *f, float *fx, float *fy,
                                        size_t nx, size_t ny,
-                                       const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void rowsForwardGradient(const float *f, float *fx, float *fy,
+                                       int blocks, int threads, sycl::queue queue);
+void rowsForwardGradient(const float *f, float *fx, float *fy,
                                        size_t nx, size_t ny,
-                                       const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void columnsForwardGradient(const float *f, float *fx, float *fy,
+                                       int blocks, int threads, sycl::queue queue);
+void columnsForwardGradient(const float *f, float *fx, float *fy,
                                           size_t nx, size_t ny,
-                                          const sycl::nd_item<3> &item_ct1);
+                                          int blocks, int threads, sycl::queue queue);
 
-SYCL_EXTERNAL void zoomSize(const int *nx, const int *ny, int *nxx, int *nyy,
-                            float factor);
-SYCL_EXTERNAL void bicubicResample(const float *Is, float *Iout, const int *nxx,
+void zoomSize(const int *nx, const int *ny, int *nxx, int *nyy,
+                            float factor, sycl::queue queue);
+void bicubicResample(const float *Is, float *Iout, const int *nxx,
                                    const int *nyy, const int *nx, const int *ny,
                                    float factor,
-                                   const sycl::nd_item<3> &item_ct1);
-SYCL_EXTERNAL void bicubicResample2(const float *Is, float *Iout,
+                                   int blocks, int threads, sycl::queue queue);
+void bicubicResample2(const float *Is, float *Iout,
                                     const int *nxx, const int *nyy,
                                     const int *nx, const int *ny,
-                                    const sycl::nd_item<3> &item_ct1);
+                                    int blocks, int threads, sycl::queue queue);
 
 float bicubicInterpolationAt(const float* input, float uu, float vv, int nx, int ny, bool border_out);
 void bicubicInterpolationWarp(const float *input, const float *u,

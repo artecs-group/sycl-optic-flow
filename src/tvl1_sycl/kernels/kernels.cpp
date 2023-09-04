@@ -4,261 +4,348 @@
 
 #include "kernels.hpp"
 
-SYCL_EXTERNAL void bodyDivergence(const float *v1, const float *v2, float *div,
-                                  int nx, int ny,
-                                  const sycl::nd_item<3> &item_ct1) {
-        const int i = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                       item_ct1.get_local_id(2)) +
-                      1;
-        if(i < (nx-1)*(ny-1)){
-		div[i]  = (v1[i] - v1[i-1]) + (v2[i] - v2[i-nx]);
-	}
+void bodyDivergence(const float *v1, const float *v2, float *div,
+    int nx, int ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
+        if(i < (nx-1)*(ny-1))
+		    div[i]  = (v1[i] - v1[i-1]) + (v2[i] - v2[i-nx]);
+    });
 }
 
-SYCL_EXTERNAL void edgeRowsDivergence(const float *v1, const float *v2,
-                                      float *div, int nx, int ny,
-                                      const sycl::nd_item<3> &item_ct1) {
-        const int j = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                       item_ct1.get_local_id(2)) +
-                      1;
+void edgeRowsDivergence(const float *v1, const float *v2,
+    float *div, int nx, int ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         const int p = (ny-1) * nx + j;
 
-	if(j < (nx-1)){
-		div[j] = v1[j] - v1[j-1] + v2[j];
-		div[p] = v1[p] - v1[p-1] - v2[p-nx];
-	}
+        if(j < (nx-1)){
+            div[j] = v1[j] - v1[j-1] + v2[j];
+            div[p] = v1[p] - v1[p-1] - v2[p-nx];
+        }
+    });
 }
 
-SYCL_EXTERNAL void edgeColumnsDivergence(const float *v1, const float *v2,
-                                         float *div, int nx, int ny,
-                                         const sycl::nd_item<3> &item_ct1) {
-        const int i = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                       item_ct1.get_local_id(2)) +
-                      1;
+void edgeColumnsDivergence(const float *v1, const float *v2,
+    float *div, int nx, int ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         const int p1 = i * nx;
-	const int p2 = (i+1) * nx - 1;
+        const int p2 = (i+1) * nx - 1;
 
-	if(i < (ny-1)){
-		div[p1] =  v1[p1]   + v2[p1] - v2[p1 - nx];
-		div[p2] = -v1[p2-1] + v2[p2] - v2[p2 - nx];
-	}
+        if(i < (ny-1)){
+            div[p1] =  v1[p1]   + v2[p1] - v2[p1 - nx];
+            div[p2] = -v1[p2-1] + v2[p2] - v2[p2 - nx];
+        }
+    });
 }
 
-SYCL_EXTERNAL void cornersDivergence(const float *v1, const float *v2,
-                                     float *div, int nx, int ny) {
+void cornersDivergence(const float *v1, const float *v2,
+    float *div, int nx, int ny, sycl::queue queue) 
+{
+    queue.parallel_for(1, [=](sycl::item<1> i)
+    {
         div[0]         =  v1[0] + v2[0];
-	div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
-	div[(ny-1)*nx] =  v1[(ny-1)*nx] - v2[(ny-2)*nx];
-	div[ny*nx-1]   = -v1[ny*nx - 2] - v2[(ny-1)*nx - 1];
+        div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
+        div[(ny-1)*nx] =  v1[(ny-1)*nx] - v2[(ny-2)*nx];
+        div[ny*nx-1]   = -v1[ny*nx - 2] - v2[(ny-1)*nx - 1];
+    });
 }
 
-SYCL_EXTERNAL void bodyForwardGradient(const float *f, float *fx, float *fy,
-                                       size_t nx, size_t ny,
-                                       const sycl::nd_item<3> &item_ct1) {
-        const int i = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                      item_ct1.get_local_id(2);
-        if(i < (nx-1)*(ny-1)){
-		fx[i] = f[i+1] - f[i];
-		fy[i] = f[i+nx] - f[i];
-	}
+void bodyForwardGradient(const float *f, float *fx, float *fy,
+    size_t nx, size_t ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
+        if(i < (nx-1)*(ny-1)) {
+            fx[i] = f[i+1] - f[i];
+            fy[i] = f[i+nx] - f[i];
+        }
+    });
 }
 
-SYCL_EXTERNAL void rowsForwardGradient(const float *f, float *fx, float *fy,
-                                       size_t nx, size_t ny,
-                                       const sycl::nd_item<3> &item_ct1) {
-        const int j = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                      item_ct1.get_local_id(2);
+void rowsForwardGradient(const float *f, float *fx, float *fy,
+    size_t nx, size_t ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int j = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
         const int p = (ny-1) * nx + j;
 
-	if(j < (nx-1)){
-		fx[p] = f[p+1] - f[p];
-		fy[p] = 0;
-	}
+        if(j < (nx-1)){
+            fx[p] = f[p+1] - f[p];
+            fy[p] = 0;
+        }
+    });
 }
 
-SYCL_EXTERNAL void columnsForwardGradient(const float *f, float *fx, float *fy,
-                                          size_t nx, size_t ny,
-                                          const sycl::nd_item<3> &item_ct1) {
-        const int i = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                      item_ct1.get_local_id(2) + 1;
+void columnsForwardGradient(const float *f, float *fx, float *fy,
+    size_t nx, size_t ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         const int p = i * nx-1;
 
-	if(i < ny){
-		fx[p] = 0;
-		fy[p] = f[p+nx] - f[p];
-	}
+        if(i < ny){
+            fx[p] = 0;
+            fy[p] = f[p+nx] - f[p];
+        }
+    });
 }
 
-SYCL_EXTERNAL void bodyGradient(const float *input, float *dx, float *dy,
-                                int nx, int ny,
-                                const sycl::nd_item<3> &item_ct1) {
-        const int i = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                       item_ct1.get_local_id(2)) +
-                      1;
+void bodyGradient(const float *input, float *dx, float *dy,
+    int nx, int ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         if(i < (nx-1)*(ny-1)){
-		dx[i] = 0.5*(input[i+1] - input[i-1]);
-		dy[i] = 0.5*(input[i+nx] - input[i-nx]);
-	}
+            dx[i] = 0.5*(input[i+1] - input[i-1]);
+            dy[i] = 0.5*(input[i+nx] - input[i-nx]);
+        }
+    });
 }
 
-SYCL_EXTERNAL void edgeRowsGradient(const float *input, float *dx, float *dy,
-                                    int nx, int ny,
-                                    const sycl::nd_item<3> &item_ct1) {
-        const int j = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                       item_ct1.get_local_id(2)) +
-                      1;
+void edgeRowsGradient(const float *input, float *dx, float *dy,
+    int nx, int ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         const int k = (ny - 1) * nx + j;
-	if(j < nx-1) {
-		dx[j] = 0.5*(input[j+1] - input[j-1]);
-		dy[j] = 0.5*(input[j+nx] - input[j]);
-		dx[k] = 0.5*(input[k+1] - input[k-1]);
-		dy[k] = 0.5*(input[k] - input[k-nx]);
-	}
+        if(j < nx-1) {
+            dx[j] = 0.5*(input[j+1] - input[j-1]);
+            dy[j] = 0.5*(input[j+nx] - input[j]);
+            dx[k] = 0.5*(input[k+1] - input[k-1]);
+            dy[k] = 0.5*(input[k] - input[k-nx]);
+        }
+    });
 }
 
-SYCL_EXTERNAL void edgeColumnsGradient(const float *input, float *dx, float *dy,
-                                       int nx, int ny,
-                                       const sycl::nd_item<3> &item_ct1) {
-        const int i = (item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                       item_ct1.get_local_id(2)) +
-                      1;
+void edgeColumnsGradient(const float *input, float *dx, float *dy,
+    int nx, int ny,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         const int p = i * nx;
-	const int k = (i+1) * nx - 1;
-	if(i < ny-1) {
-		dx[p] = 0.5*(input[p+1] - input[p]);
-		dy[p] = 0.5*(input[p+nx] - input[p-nx]);
-		dx[k] = 0.5*(input[k] - input[k-1]);
-		dy[k] = 0.5*(input[k+nx] - input[k-nx]);
-	}
+        const int k = (i+1) * nx - 1;
+        if(i < ny-1) {
+            dx[p] = 0.5*(input[p+1] - input[p]);
+            dy[p] = 0.5*(input[p+nx] - input[p-nx]);
+            dx[k] = 0.5*(input[k] - input[k-1]);
+            dy[k] = 0.5*(input[k+nx] - input[k-nx]);
+        }
+    });
 }
 
-SYCL_EXTERNAL void cornersGradient(const float *input, float *dx, float *dy,
-                                   int nx, int ny) {
+void cornersGradient(const float *input, float *dx, float *dy,
+    int nx, int ny, sycl::queue queue) 
+{
+    queue.parallel_for(1, [=](sycl::item<1> i)
+    {
         dx[0] = 0.5*(input[1] - input[0]);
-	dy[0] = 0.5*(input[nx] - input[0]);
+        dy[0] = 0.5*(input[nx] - input[0]);
 
-	dx[nx-1] = 0.5*(input[nx-1] - input[nx-2]);
-	dy[nx-1] = 0.5*(input[2*nx-1] - input[nx-1]);
+        dx[nx-1] = 0.5*(input[nx-1] - input[nx-2]);
+        dy[nx-1] = 0.5*(input[2*nx-1] - input[nx-1]);
 
-	dx[(ny-1)*nx] = 0.5*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
-	dy[(ny-1)*nx] = 0.5*(input[(ny-1)*nx] - input[(ny-2)*nx]);
+        dx[(ny-1)*nx] = 0.5*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
+        dy[(ny-1)*nx] = 0.5*(input[(ny-1)*nx] - input[(ny-2)*nx]);
 
-	dx[ny*nx-1] = 0.5*(input[ny*nx-1] - input[ny*nx-1-1]);
-	dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+        dx[ny*nx-1] = 0.5*(input[ny*nx-1] - input[ny*nx-1-1]);
+        dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+    });
 }
 
-SYCL_EXTERNAL void convolution1D(float *B, int size, float sPi, float den,
-                                 const sycl::nd_item<3> &item_ct1) {
-        const int i = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                      item_ct1.get_local_id(2);
+void convolution1D(float *B, int size, float sPi, float den,
+    int blocks, int threads, sycl::queue queue) 
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
         if(i < size)
-                B[i] = 1 / sPi * sycl::exp(-i * i / den);
+            B[i] = 1 / sPi * sycl::exp(-i * i / den);
+    });
 }
 
-SYCL_EXTERNAL void lineConvolution(float *I, const float *B, const int *xDim,
-                                   const int *yDim, int size, float *buffer,
-                                   const sycl::nd_item<3> &item_ct1) {
-        int k = item_ct1.get_group(1) * item_ct1.get_local_range(1) +
-                item_ct1.get_local_id(1); // Row index
-        const int xdim{xDim[0]}, ydim{yDim[0]};
-    const int bdx = xdim + size;
-
-    if (k < ydim) {
-        int i, j;
-        for (i = size; i < bdx; i++)
-            buffer[i] = I[k * xdim + i - size];
-
-        for (i = 0, j = bdx; i < size; i++, j++) {
-            buffer[i] = I[k * xdim + size - i];
-            buffer[j] = I[k * xdim + xdim - i - 1];
-        }
-
-        for (i = size; i < bdx; i++) {
-            float sum = B[0] * buffer[i];
-            for (j = 1; j < size; j++)
-                sum += B[j] * (buffer[i - j] + buffer[i + j]);
-            I[k * xdim + i - size] = sum;
-        }
-    }
-}
-
-SYCL_EXTERNAL void columnConvolution(float *I, const float *B, const int *xDim,
-                                     const int *yDim, int size, float *buffer,
-                                     const sycl::nd_item<3> &item_ct1) {
-    int k = item_ct1.get_group(1) * item_ct1.get_local_range(1) +
-            item_ct1.get_local_id(1); // Row index
-        const int xdim{xDim[0]}, ydim{yDim[0]};
-    const int bdy = ydim + size;
-
-	if (k < xdim) {
-        int i, j;
-        for (i = size; i < bdy; i++)
-            buffer[i] = I[(i - size) * xdim + k];
-
-        for (i = 0, j = bdy; i < size; i++, j++) {
-            buffer[i] = I[(size - i) * xdim + k];
-            buffer[j] = I[(ydim - i - 1) * xdim + k];
-        }
-
-        for (i = size; i < bdy; i++) {
-            float sum = B[0] * buffer[i];
-            for (j = 1; j < size; j++)
-                sum += B[j] * (buffer[i - j] + buffer[i + j]);
-            I[(i - size) * xdim + k] = sum;
-        }
-    }
-}
-
-SYCL_EXTERNAL void bicubicResample(const float *Is, float *Iout, const int *nxx,
-                                   const int *nyy, const int *nx, const int *ny,
-                                   float factor,
-                                   const sycl::nd_item<3> &item_ct1)
+void lineConvolution(float *I, const float *B, const int *xDim,
+    const int *yDim, int size, float *buffer,
+    int blocks, int threads, sycl::queue queue) 
 {
-    const int idx = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                    item_ct1.get_local_id(2);
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        int k = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
+        const int xdim{xDim[0]}, ydim{yDim[0]};
+        const int bdx = xdim + size;
 
-    if (idx < *nyy * *nxx) {
-		const int i = idx / *nxx;
-		const int j = idx % *nxx;
-		const float ii = (float)i / factor;
-		const float jj = (float)j / factor;
-        Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
-    }
+        if (k < ydim) {
+            int i, j;
+            for (i = size; i < bdx; i++)
+                buffer[i] = I[k * xdim + i - size];
+
+            for (i = 0, j = bdx; i < size; i++, j++) {
+                buffer[i] = I[k * xdim + size - i];
+                buffer[j] = I[k * xdim + xdim - i - 1];
+            }
+
+            for (i = size; i < bdx; i++) {
+                float sum = B[0] * buffer[i];
+                for (j = 1; j < size; j++)
+                    sum += B[j] * (buffer[i - j] + buffer[i + j]);
+                I[k * xdim + i - size] = sum;
+            }
+        }
+    });
 }
 
-SYCL_EXTERNAL void bicubicResample2(const float *Is, float *Iout,
-                                    const int *nxx, const int *nyy,
-                                    const int *nx, const int *ny,
-                                    const sycl::nd_item<3> &item_ct1)
+void columnConvolution(float *I, const float *B, const int *xDim,
+    const int *yDim, int size, float *buffer,
+    int blocks, int threads, sycl::queue queue) 
 {
-    const int idx = item_ct1.get_group(2) * item_ct1.get_local_range(2) +
-                    item_ct1.get_local_id(2);
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        int k = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
+        const int xdim{xDim[0]}, ydim{yDim[0]};
+        const int bdy = ydim + size;
 
-    if (idx < *nyy * *nxx) {
-		const int i = idx / *nxx;
-		const int j = idx % *nxx;
-		const float ii = (float)i / ((float)*nyy / *ny);
-		const float jj = (float)j / ((float)*nxx / *nx);
-        Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
-    }
+        if (k < xdim) {
+            int i, j;
+            for (i = size; i < bdy; i++)
+                buffer[i] = I[(i - size) * xdim + k];
+
+            for (i = 0, j = bdy; i < size; i++, j++) {
+                buffer[i] = I[(size - i) * xdim + k];
+                buffer[j] = I[(ydim - i - 1) * xdim + k];
+            }
+
+            for (i = size; i < bdy; i++) {
+                float sum = B[0] * buffer[i];
+                for (j = 1; j < size; j++)
+                    sum += B[j] * (buffer[i - j] + buffer[i + j]);
+                I[(i - size) * xdim + k] = sum;
+            }
+        }
+    });
+}
+
+void bicubicResample(const float *Is, float *Iout, const int *nxx,
+    const int *nyy, const int *nx, const int *ny,
+    float factor,
+    int blocks, int threads, sycl::queue queue)
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int idx = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
+
+        if (idx < *nyy * *nxx) {
+            const int i = idx / *nxx;
+            const int j = idx % *nxx;
+            const float ii = (float)i / factor;
+            const float jj = (float)j / factor;
+            Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
+        }
+    });
+}
+
+void bicubicResample2(const float *Is, float *Iout,
+    const int *nxx, const int *nyy,
+    const int *nx, const int *ny,
+    int blocks, int threads, sycl::queue queue)
+{
+    queue.parallel_for( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
+                        sycl::range<3>(1, 1, threads),
+                        sycl::range<3>(1, 1, threads)),
+                        [=](sycl::nd_item<3> item)
+    {
+        const int idx = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
+
+        if (idx < *nyy * *nxx) {
+            const int i = idx / *nxx;
+            const int j = idx % *nxx;
+            const float ii = (float)i / ((float)*nyy / *ny);
+            const float jj = (float)j / ((float)*nxx / *nx);
+            Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
+        }
+    });
 }
 
 
 /**
  * Compute the size of a zoomed image from the zoom factor
 **/
-SYCL_EXTERNAL void zoomSize(const int *nx, // width of the orignal image
-                            const int *ny, // height of the orignal image
-                            int *nxx,      // width of the zoomed image
-                            int *nyy,      // height of the zoomed image
-                            float factor   // zoom factor between 0 and 1
+void zoomSize(const int *nx, // width of the orignal image
+    const int *ny, // height of the orignal image
+    int *nxx,      // width of the zoomed image
+    int *nyy,      // height of the zoomed image
+    float factor,   // zoom factor between 0 and 1
+    sycl::queue queue
 )
 {
-	//compute the new size corresponding to factor
-	//we add 0.5 for rounding off to the closest number
-	*nxx = (int)(*nx * factor + 0.5);
-	*nyy = (int)(*ny * factor + 0.5);
+    queue.parallel_for(1, [=](sycl::item<1> i)
+    {
+        //compute the new size corresponding to factor
+        //we add 0.5 for rounding off to the closest number
+        *nxx = (int)(*nx * factor + 0.5);
+        *nyy = (int)(*ny * factor + 0.5);
+    });
 }
 
 

@@ -141,7 +141,8 @@ int App::run() {
     // buffers required for the image proccesing
     float* img = new float[width * height]{0};
     TV_L1 tvl1 = TV_L1(width, height);
-    int processedFrames = 0;
+    unsigned int processedFrames{0};
+    double fps{0};
     cv::TickMeter timer;
     
     // Iterate over all frames
@@ -173,6 +174,7 @@ int App::run() {
             cv::Mat imgToShow = m_frameGray;
 
             std::ostringstream msg, msg2;
+            fps += 1000 / timer.getTimeMilli();
             int currentFPS = 1000 / timer.getTimeMilli();
             msg << devName;
             msg2 << "FPS " << currentFPS << " (" << imgToShow.size
@@ -215,8 +217,14 @@ int App::run() {
             if (!m_show_ui && (processedFrames > 100)) 
                 m_running = false;
         }
+        std::cout << std::endl;
+        std::cout << "Number of frames = " << processedFrames << std::endl;
+        std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
     }
     catch (const std::exception& e) {
+        std::cout << std::endl;
+        std::cout << "Number of frames = " << processedFrames << std::endl;
+        std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
         delete[] img;
         return 0;
     }

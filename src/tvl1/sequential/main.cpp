@@ -150,7 +150,8 @@ int App::run() {
 
     TV_L1 tvl1 = TV_L1(width, height);
 
-    int processedFrames = 0;
+    unsigned int processedFrames{0};
+    double fps{0};
 
     cv::Mat auxFrame;
     cv::TickMeter timer;
@@ -181,6 +182,7 @@ int App::run() {
         cv::Mat imgToShow = m_frameGray;
 
         std::ostringstream msg, msg2;
+        fps += 1000 / timer.getTimeMilli();
         int currentFPS = 1000 / timer.getTimeMilli();
         //msg << devName;
         msg2 << "FPS " << currentFPS << " (" << imgToShow.size
@@ -225,6 +227,10 @@ int App::run() {
         if (!m_show_ui && (processedFrames > 100)) 
             m_running = false;
     }
+
+    std::cout << std::endl;
+    std::cout << "Number of frames = " << processedFrames << std::endl;
+    std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
 
     delete[] I0;
     delete[] I1;

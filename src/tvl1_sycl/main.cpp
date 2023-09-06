@@ -126,6 +126,7 @@ int App::run() {
 
     initSYCL();
     const std::string devName = m_syclQueue.get_device().get_info<sycl::info::device::name>();
+    std::cout << "Running on: " << devName << std::endl;
 
     initVideoSource();
 

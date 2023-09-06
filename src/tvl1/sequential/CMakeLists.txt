@@ -20,31 +20,7 @@ set(Source
     bicubic_interpolation/bicubic_interpolation.cpp
 )
 
-set(supported_devices
-    cpu
-    igpu
-    ngpu
-)
-
-if(DEVICE)
-    list(FIND supported_devices ${DEVICE} device_idx)
-    if(device_idx EQUAL -1)
-        message(FATAL_ERROR "Available devices are: ${supported_devices}")
-    endif()
-else()
-    set(DEVICE cpu)
-endif()
-
 set(EXTRA_FLAGS "")
-
-if(DEVICE STREQUAL "ngpu")
-    message(STATUS "Configuring for CUDA architecture.")
-    find_package(CUDA REQUIRED)
-    set(EXTRA_FLAGS "-fsycl-targets=nvptx64-nvidia-cuda")
-elseif(DEVICE STREQUAL "cpu")
-    message(STATUS "Configuring for CPU architecture.")
-    set(EXTRA_FLAGS "-xHost")
-endif()
 
 if(DEBUG)
     message(STATUS "Added -g to compilation.")

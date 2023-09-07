@@ -48,6 +48,7 @@ App::App(const CommandLineParser& cmd)
 {
     m_camera_id  = cmd.get<int>("camera");
     m_file_name  = cmd.get<std::string>("video");
+    m_show_ui    = cmd.get<bool>("show");
 
     m_running    = false;
     m_process    = false;
@@ -135,7 +136,6 @@ int App::run() {
 
     m_running = true;
     m_process = true;
-    m_show_ui = true;
 
     const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
@@ -241,7 +241,8 @@ int main(int argc, char** argv)
     const char* keys =
         "{ help h ?    |          | print help message }"
         "{ camera c    | -1       | use camera as input }"
-        "{ video  v    |          | use video as input }";
+        "{ video  v    |          | use video as input }"
+        "{ show   s    |          | show user interface }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.has("help"))

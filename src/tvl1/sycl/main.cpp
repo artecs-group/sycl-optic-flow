@@ -165,29 +165,27 @@ int App::run() {
                 }
                 try {
                     tvl1.runDualTVL1Multiscale(img);
-                    flowToColor(width, height, tvl1.getU(), m_frameGray);
                 }
                 catch(const std::exception& e) {
                     std::cerr << e.what() << '\n';
                 }
             }
             timer.stop();
-
-            cv::Mat imgToShow = m_frameGray;
-
-            std::ostringstream msg, msg2;
             fps += 1000 / timer.getTimeMilli();
-            int currentFPS = 1000 / timer.getTimeMilli();
-            msg << devName;
-            msg2 << "FPS " << currentFPS << " (" << imgToShow.size
-                << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
-                << " (process: " << (m_process ? "True" : "False") << ")";
-
-            cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-            cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
 
             if (m_show_ui) {
                 try {
+                    flowToColor(width, height, tvl1.getU(), m_frameGray);
+                    cv::Mat imgToShow = m_frameGray;
+                    std::ostringstream msg, msg2;
+                    int currentFPS = 1000 / timer.getTimeMilli();
+                    msg << devName;
+                    msg2 << "FPS " << currentFPS << " (" << imgToShow.size
+                        << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
+                        << " (process: " << (m_process ? "True" : "False") << ")";
+
+                    cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+                    cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
                     cv::imshow("Optic Flow", imgToShow);
                     int key = waitKey(1);
                     switch (key) {

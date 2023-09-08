@@ -1,7 +1,6 @@
 #ifndef KERNELS
 #define KERNELS
 
-#include <sycl/sycl.hpp>
 #include <cmath>
 #include <cstdint>
 

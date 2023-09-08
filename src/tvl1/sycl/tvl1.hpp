@@ -1,8 +1,10 @@
 #ifndef DUAL_TVL1_OPTIC_FLOW_H
 #define DUAL_TVL1_OPTIC_FLOW_H
 
-#include <sycl/sycl.hpp>
+#include <CL/sycl.hpp>
 #include <cstdint>
+
+using namespace cl;
 
 constexpr size_t MAX_ITERATIONS{5};
 constexpr float PRESMOOTHING_SIGMA{0.8f};

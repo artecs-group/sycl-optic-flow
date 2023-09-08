@@ -1,4 +1,4 @@
-#include <sycl/sycl.hpp>
+#include <CL/sycl.hpp>
 #include <string>
 #include <cmath>
 #include <iostream>
@@ -11,6 +11,7 @@
 #include "tvl1.hpp"
 
 using namespace cv;
+using namespace cl;
 
 
 class App {

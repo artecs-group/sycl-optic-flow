@@ -27,7 +27,7 @@ set(THREADS_PER_BLOCK_DEFAULT 128 CACHE STRING "Default number of threads per bl
 set(THREADS_PER_BLOCK ${THREADS_PER_BLOCK_DEFAULT} CACHE STRING "Number of threads per block")
 
 find_package(OpenCV REQUIRED)
-set(CXXFLAGS "-O3" "-fsycl-unnamed-lambda" "-fsycl" ${EXTRA_FLAGS})
+set(CXXFLAGS "-O3" "-fsycl" ${EXTRA_FLAGS})
 
 if(NGPU)
     #list(APPEND CXXFLAGS "-fsycl-targets=nvptx64-nvidia-cuda,nvidia_gpu_sm_53,nvidia_gpu_sm_61,nvidia_gpu_sm_87")

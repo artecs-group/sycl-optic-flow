@@ -597,9 +597,9 @@ void divideByG(const float *g1, const float *g2, size_t size,
     });
 }
 
-void normKernel(const float *__restrict__ I0,
-    const float *__restrict__ I1,
-    float *__restrict__ I0n, float *__restrict__ I1n,
+void normKernel(const float* I0,
+    const float* I1,
+    float* I0n, float* I1n,
     float min, float den, int size,
     int blocks, int threads, sycl::queue queue) 
 {

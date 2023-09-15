@@ -7,7 +7,7 @@ find_package(CUDA REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(/usr/local/cuda/include)
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -ccbin g++-10 -std=c++11" )
-cuda_add_executable(lk kernels.cu lucaskanade.cpp main.cpp)
+cuda_add_executable(lk kernels.cu lucaskanade.cu main.cu)
 target_link_libraries(lk ${OpenCV_LIBS})
 
 set(CMAKE_VERBOSE_MAKEFILE ON)

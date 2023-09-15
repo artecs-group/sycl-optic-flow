@@ -8,14 +8,14 @@ using namespace cl;
 
 constexpr size_t MAX_ITERATIONS{5};
 constexpr float PRESMOOTHING_SIGMA{0.8f};
-constexpr float ZOOM_SIGMA_ZERO{0.6};
+constexpr float ZOOM_SIGMA_ZERO{0.6f};
 constexpr size_t DEFAULT_GAUSSIAN_WINDOW_SIZE{5};
 
 class TV_L1 { 
 public:
-    TV_L1(sycl::queue queue, int width, int height, float tau=0.25, float lambda=0.15, 
-        float theta=0.3, int nscales=100, float zfactor=0.5, int warps=5,
-        float epsilon=0.01);
+    TV_L1(sycl::queue queue, int width, int height, float tau=0.25f, float lambda=0.15f, 
+        float theta=0.3f, int nscales=100, float zfactor=0.5f, int warps=5,
+        float epsilon=0.01f);
     ~TV_L1();
     const float* getU() { return _hostU; };
     void runDualTVL1Multiscale(const float* I);

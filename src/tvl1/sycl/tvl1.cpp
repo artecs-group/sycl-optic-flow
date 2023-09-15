@@ -37,10 +37,10 @@ TV_L1::TV_L1(sycl::queue queue, int width, int height, float tau, float lambda, 
     //Set the number of scales according to the size of the
     //images.  The value N is computed to assure that the smaller
     //images of the pyramid don't have a size smaller than 16x16
-	const float N = 1 + std::log(std::hypot(width, height)/16.0) / std::log(1 / zfactor);
+	const float N = 1.0f + std::log(std::hypot(width, height)/16.0f) / std::log(1.0f / zfactor);
 	_nscales = (N < nscales) ? N : nscales;
 
-	_hostU = new float[2 * _width*_height]{0};
+	_hostU = new float[2 * _width*_height]{0.0f};
 	_hNx   = new int[_nscales];
 	_hNy   = new int[_nscales];
 
@@ -75,7 +75,7 @@ TV_L1::TV_L1(sycl::queue queue, int width, int height, float tau, float lambda, 
     _lError = sycl::malloc_shared<float>(1, _queue);
     _maxMin = sycl::malloc_shared<int64_t>(4, _queue);
 
-    float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(_zfactor*_zfactor) - 1.0);
+    float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0f/(_zfactor*_zfactor) - 1.0f);
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
 	const int bSize = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
     _B = sycl::malloc_device<float>(bSize, _queue);
@@ -400,9 +400,9 @@ void TV_L1::gaussian(float *I,        // input/output image
                      float sigma,     // Gaussian sigma
                      float *buffer)
 {
-    const float den  = 2*sigma*sigma;
-	const float sPi = sigma * std::sqrt(M_PI * 2);
-	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1 ;
+    const float den  = 2.0f*sigma*sigma;
+	const float sPi = sigma * std::sqrt(M_PI * 2.0f);
+	const int   size = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
 	int hXdim{0}, hYdim{0};
     _queue.memcpy(&hXdim, xdim, sizeof(int));
     _queue.memcpy(&hYdim, ydim, sizeof(int));
@@ -424,7 +424,7 @@ void TV_L1::gaussian(float *I,        // input/output image
     _queue.memcpy(&hB, B, sizeof(float));
     _queue.wait();
     norm = _lError[0];
-    norm = 1 / (norm * 2 - hB);
+    norm = 1.0f / (norm * 2.0f - hB);
     oneapi::mkl::blas::column_major::scal(_queue, size, norm, B, 1);
 
     blocks = hYdim / THREADS_PER_BLOCK + (hYdim % THREADS_PER_BLOCK == 0 ? 0:1);
@@ -459,15 +459,15 @@ void TV_L1::zoomOut(const float *I, // input image
     _queue.memcpy(Is, I, sx * sy * sizeof(float));
 
     // compute the size of the zoomed image
-	sx = (int)(sx * factor + 0.5);
-	sy = (int)(sy * factor + 0.5);
+	sx = (int)(sx * factor + 0.5f);
+	sy = (int)(sy * factor + 0.5f);
 
     _queue.memcpy(nxx, &sx, sizeof(int));
     _queue.memcpy(nyy, &sy, sizeof(int));
     _queue.wait();
 
     // compute the Gaussian sigma for smoothing
-	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0/(factor*factor) - 1.0);
+	const float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0f/(factor*factor) - 1.0f);
 
 	// pre-smooth the image
 	try { gaussian(Is, B, nx, ny, sigma, gaussBuffer); }

@@ -6,7 +6,7 @@ mkdir build
 cd build
 cmake -G Ninja -DCMAKE_CXX_COMPILER=nvcc ..
 cmake --build .
-./lk --video=../../../../dataset/schoolgirls.mp4 --show=false
+./lk --video=../../../../dataset/schoolgirls.mp4
 ```
 
 ## Acknowledgement

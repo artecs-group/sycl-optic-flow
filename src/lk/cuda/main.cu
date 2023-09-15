@@ -133,8 +133,6 @@ int App::run() {
 	constexpr int spac_conv_size{3};
 	constexpr int window_size{5};
 
-	unsigned char* wind_frs = new unsigned char [temp_conv_size*width*height];
-	unsigned char* video_frames = new unsigned char[nframes*width*height];
 	float* Vx = new float [nframes*width*height];
 	float* Vy = new float [nframes*width*height];
     LucasKanade lk(spac_conv_size, temp_conv_size, window_size, width, height);
@@ -156,17 +154,18 @@ int App::run() {
             cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-                memcpy(video_frames + processedFrames*height*width, m_frameGray.data, height*width);
 			    lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
-                if (processedFrames >= temp_conv_size-1)
-			        lk.lucas_kanade(Vx+processedFrames*width*height, Vy+processedFrames*width*height, processedFrames, wind_frs);
+                if (processedFrames >= temp_conv_size-1) {
+			        lk.lucas_kanade(Vx+processedFrames*width*height, Vy+processedFrames*width*height, processedFrames);
+                }
             }
             timer.stop();
             fps += 1000 / timer.getTimeMilli();
 
-            if (m_show_ui && (processedFrames >= temp_conv_size-1)) {
+            if (m_show_ui) {
                 try {
-                    flowToColor(width, height, Vx, Vy, m_frameGray);
+                    if(m_process && (processedFrames >= temp_conv_size-1))
+                        flowToColor(width, height, Vx, Vy, m_frameGray);
                     cv::Mat imgToShow = m_frameGray;
                     std::ostringstream msg, msg2;
                     int currentFPS = 1000 / timer.getTimeMilli();
@@ -196,8 +195,6 @@ int App::run() {
                 catch (const std::exception& e) {
                     std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
                     if (processedFrames > 0) {
-                        delete[] video_frames;
-                        delete[] wind_frs;
                         delete[] Vx;
                         delete[] Vy;
                         throw;
@@ -219,15 +216,11 @@ int App::run() {
         std::cout << std::endl;
         std::cout << "Number of frames = " << processedFrames << std::endl;
         std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
-        delete[] video_frames;
-        delete[] wind_frs;
         delete[] Vx;
         delete[] Vy;
         return 0;
     }
 
-    delete[] video_frames;
-    delete[] wind_frs;
     delete[] Vx;
     delete[] Vy;
     return 0;
@@ -239,7 +232,7 @@ int main(int argc, char** argv)
     const char* keys =
         "{ help h ?    |          | print help message }"
         "{ video  v    |          | use video as input }"
-        "{ show   s    |          | show user interface }";
+        "{ show   s    |   true   | show user interface }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.has("help"))

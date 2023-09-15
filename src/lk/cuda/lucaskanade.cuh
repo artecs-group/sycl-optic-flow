@@ -1,13 +1,13 @@
 #ifndef _LUCASKANADE_H_
 #define _LUCASKANADE_H_
 
-#include "kernels.cuh"
+#include "kernels/kernels.cuh"
 
 class LucasKanade {
 public:
 	LucasKanade(int spac_filt_size_, int temp_filt_size_, int window_size_, int nx_, int ny_);
 	~LucasKanade();
-	void lucas_kanade(float *Vx, float *Vy, int iframe, unsigned char *wind_frames);
+	void lucas_kanade(float *Vx, float *Vy, int iframe);
 	void copy_frames_circularbuffer_GPU_wrapper(unsigned char *frame, int temp_size, int fr, int frame_size);
 private:
 	void getfilters(float *filt_x, float *filt_y, float *filt_t, int spac_filt_size, int temp_filt_size);
@@ -20,10 +20,6 @@ private:
 	float *filt_x;
 	float *filt_y;
 	float *filt_t;
-	
-	float *Ix;
-	float *Iy;
-	float *It;
 
 	/* For GPU memory */
 	float *d_filt_x;

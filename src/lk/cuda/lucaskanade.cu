@@ -1,8 +1,6 @@
 #include <iostream>
-#include <new>  
 
 #include "lucaskanade.cuh"
-#include "kernels.cuh"
 
 LucasKanade::LucasKanade(int spac_filt_size_, int temp_filt_size_, int window_size_, int nx_, int ny_)
 {
@@ -15,10 +13,6 @@ LucasKanade::LucasKanade(int spac_filt_size_, int temp_filt_size_, int window_si
 	filt_x = new float [spac_filt_size];
 	filt_y = new float [spac_filt_size];
 	filt_t = new float [temp_filt_size];
-
-	Ix     = new float [nx*ny];
-	Iy     = new float [nx*ny];
-	It     = new float [nx*ny];
 
 	getfilters(filt_x, filt_y, filt_t, spac_filt_size, temp_filt_size);
 	
@@ -43,10 +37,6 @@ LucasKanade::~LucasKanade() {
 	delete[] filt_y;
 	delete[] filt_t;
 
-	delete[] Ix;
-	delete[] Iy;
-	delete[] It;
-
 	cudaFree(d_filt_x);
 	cudaFree(d_filt_y);
 	cudaFree(d_filt_t);
@@ -61,9 +51,8 @@ LucasKanade::~LucasKanade() {
 /********************************************************************/
 /* Return the Velocity Vx,Vy from an input images in window_frames  */
 /********************************************************************/
-void LucasKanade::lucas_kanade(float *Vx, float *Vy, int iframe, unsigned char *wind_frames)
+void LucasKanade::lucas_kanade(float *Vx, float *Vy, int iframe)
 {
-	unsigned char* frame = wind_frames + (((iframe+1)%temp_filt_size)*nx*ny);
 	unsigned char* d_frame = d_wind_frames + (((iframe+1)%temp_filt_size)*nx*ny);
 
 	// It
@@ -77,6 +66,8 @@ void LucasKanade::lucas_kanade(float *Vx, float *Vy, int iframe, unsigned char *
 
 	luca_kanade_1step_GPU_wrapper(Vx, Vy, d_Vx, d_Vy, d_Ix, d_Iy, d_It,
 		spac_filt_size, temp_filt_size, window_size, nx, ny);
+
+	cudaDeviceSynchronize();
 }
 
 

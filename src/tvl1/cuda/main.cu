@@ -169,7 +169,7 @@ int App::run() {
 
             if (m_show_ui) {
                 try {
-                    flowToColor(width, height, tvl1.getU(), m_frameGray);
+                    if (m_process) { flowToColor(width, height, tvl1.getU(), m_frameGray); }
                     cv::Mat imgToShow = m_frameGray;
                     std::ostringstream msg, msg2;
                     int currentFPS = 1000 / timer.getTimeMilli();
@@ -234,7 +234,7 @@ int main(int argc, char** argv)
         "{ help h ?    |          | print help message }"
         "{ camera c    | -1       | use camera as input }"
         "{ video  v    |          | use video as input }"
-        "{ show   s    |          | show user interface }";
+        "{ show   s    | true     | show user interface }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.has("help"))

@@ -31,7 +31,6 @@ set(THREADS_PER_BLOCK_DEFAULT 128 CACHE STRING "Default number of threads per bl
 set(THREADS_PER_BLOCK ${THREADS_PER_BLOCK_DEFAULT} CACHE STRING "Number of threads per block")
 
 find_package(CUDAToolkit REQUIRED)
-find_library(CUBLAS_LIBRARY cublas)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source} ${Headers})

@@ -126,15 +126,15 @@ int App::run() {
     m_process = true;
 
     const int width   = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
-	const int height  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    const int height  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     const int nframes = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_COUNT));
 
-	constexpr int temp_conv_size{2};
-	constexpr int spac_conv_size{3};
-	constexpr int window_size{5};
+    constexpr int temp_conv_size{2};
+    constexpr int spac_conv_size{3};
+    constexpr int window_size{5};
 
-	float* Vx = new float [nframes*width*height];
-	float* Vy = new float [nframes*width*height];
+    float* Vx = new float [width*height];
+    float* Vy = new float [width*height];
     LucasKanade lk(spac_conv_size, temp_conv_size, window_size, width, height);
 
     // buffers required for the image proccesing
@@ -154,9 +154,9 @@ int App::run() {
             cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-			    lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
+                lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
                 if (processedFrames >= temp_conv_size-1) {
-			        lk.lucas_kanade(Vx+processedFrames*width*height, Vy+processedFrames*width*height, processedFrames);
+                      lk.lucas_kanade(Vx, Vy, processedFrames);
                 }
             }
             timer.stop();

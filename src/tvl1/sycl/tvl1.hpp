@@ -6,7 +6,7 @@
 
 using namespace cl;
 
-constexpr size_t MAX_ITERATIONS{5};
+constexpr size_t MAX_ITERATIONS{2};
 constexpr float PRESMOOTHING_SIGMA{0.8f};
 constexpr float ZOOM_SIGMA_ZERO{0.6f};
 constexpr size_t DEFAULT_GAUSSIAN_WINDOW_SIZE{5};

@@ -50,7 +50,7 @@ __global__ void spac_convolution2D_x_GPU(float *im_conv, unsigned char *frame_in
 	j = blockIdx.x * blockDim.x + threadIdx.x; 
 
 	if (i<ny && j<nx){
-		im_conv[i*nx+j] = 0.0;
+		im_conv[i*nx+j] = 0.0f;
 		if (j<filter_center) {
 			for (k=filter_center-j; k<filter_size; k++)
 			{
@@ -96,7 +96,7 @@ __global__ void spac_convolution2D_y_GPU(float *im_conv, unsigned char *frame_in
 	j = blockIdx.x * blockDim.x + threadIdx.x; 
 
 	if (i<ny && j<nx){
-		im_conv[i*nx+j] = 0.0;
+		im_conv[i*nx+j] = 0.0f;
 		if (i<filter_center) {
 			for (k=filter_center-i; k<filter_size; k++)
 			{
@@ -134,11 +134,11 @@ void spac_convolution2D_y_GPU_wrapper(float *Iy, unsigned char *frame, int nx, i
 __global__ void luca_kanade_1step_GPU(float *Vx, float *Vy, float *Ix, float *Iy, float *It, 
 	int spac_filt_size, int temp_filt_size, int window_size, int nx, int ny)
 {
-	float sumIx2 =0.0;
-	float sumIxIy=0.0;
-	float sumIy2 =0.0;
-	float sumIxIt=0.0;
-	float sumIyIt=0.0;
+	float sumIx2 =0.0f;
+	float sumIxIy=0.0f;
+	float sumIy2 =0.0f;
+	float sumIxIt=0.0f;
+	float sumIyIt=0.0f;
 	int i, j, ii, jj;
 	int pixel_id;
 
@@ -149,11 +149,11 @@ __global__ void luca_kanade_1step_GPU(float *Vx, float *Vy, float *Ix, float *Iy
 
 	if (i>=window_center && j>=window_center && i<ny-window_center && j<nx-window_center){
 
-		sumIx2 =0.0;
-		sumIxIy=0.0;
-		sumIy2 =0.0;
-		sumIxIt=0.0;
-		sumIyIt=0.0;
+		sumIx2 =0.0f;
+		sumIxIy=0.0f;
+		sumIy2 =0.0f;
+		sumIxIt=0.0f;
+		sumIyIt=0.0f;
 
 		for (ii=-window_center;ii<=window_center; ii++)
 			for (jj=-window_center;jj<=window_center; jj++)
@@ -169,13 +169,13 @@ __global__ void luca_kanade_1step_GPU(float *Vx, float *Vy, float *Ix, float *Iy
 
 
 		//Luca-Kanade desarrollado el producto vectorial con la inversa 2x2
-		if (detA!=0.0){
-			Vx[i*nx+j] = 1.0/detA*(sumIy2*(-sumIxIt)     + (-sumIxIy)*(-sumIyIt));
-			Vy[i*nx+j] = 1.0/detA*((-sumIxIy)*(-sumIxIt) + sumIx2*(-sumIyIt));
+		if (detA!=0.0f){
+			Vx[i*nx+j] = 1.0f/detA*(sumIy2*(-sumIxIt)     + (-sumIxIy)*(-sumIyIt));
+			Vy[i*nx+j] = 1.0f/detA*((-sumIxIy)*(-sumIxIt) + sumIx2*(-sumIyIt));
 			
 		} else {
-			Vx[i*nx+j] = 0.0;
-			Vy[i*nx+j] = 0.0;
+			Vx[i*nx+j] = 0.0f;
+			Vy[i*nx+j] = 0.0f;
 		}
 	}
 }

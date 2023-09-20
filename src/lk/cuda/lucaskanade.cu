@@ -82,35 +82,35 @@ void LucasKanade::getfilters(float *filt_x, float *filt_y, float *filt_t, int sp
 	int i;
 	
 	if (spac_filt_size==1){
-		filt[0] = 1;
+		filt[0] = 1.0f;
 	} else if (spac_filt_size==3){
-		filt[0] = -1.0/2.0;
-		filt[1] =    0;
-		filt[2] =  1.0/2.0;
+		filt[0] = -1.0f/2.0f;
+		filt[1] =    0.0f;
+		filt[2] =  1.0f/2.0f;
 	} else if (spac_filt_size==5){
-		filt[0] =  1.0/12.0;
-		filt[1] = -2.0/3.0;
-		filt[2] =    0;
-		filt[3] =  2.0/3.0;
-		filt[4] = -1.0/12.0;
+		filt[0] =  1.0f/12.0f;
+		filt[1] = -2.0f/3.0f;
+		filt[2] =    0.0f;
+		filt[3] =  2.0f/3.0f;
+		filt[4] = -1.0f/12.0f;
 	} else if (spac_filt_size==7){
-		filt[0] = -1.0/60.0;
-		filt[1] =  3.0/20.0;
-		filt[2] = -3.0/4.0;
-		filt[3] =    0;
-		filt[4] =  3.0/4.0;	
-		filt[5] = -3.0/20.0;
-		filt[6] =  1.0/60.0;
+		filt[0] = -1.0f/60.0f;
+		filt[1] =  3.0f/20.0f;
+		filt[2] = -3.0f/4.0f;
+		filt[3] =    0.0f;
+		filt[4] =  3.0f/4.0f;	
+		filt[5] = -3.0f/20.0f;
+		filt[6] =  1.0f/60.0f;
 	} else if (spac_filt_size==9){
-		filt[0] =  1.0/280.0;
-		filt[1] = -4.0/105.0;
-		filt[2] =  1.0/5.0;
-		filt[3] = -4.0/5.0;
-		filt[4] =    0;	
-		filt[5] =  4.0/5.0;
-		filt[6] = -1.0/5.0;
-		filt[7] =  4.0/105.0;
-		filt[8] = -1.0/280.0;
+		filt[0] =  1.0f/280.0f;
+		filt[1] = -4.0f/105.0f;
+		filt[2] =  1.0f/5.0f;
+		filt[3] = -4.0f/5.0f;
+		filt[4] =    0.0f;	
+		filt[5] =  4.0f/5.0f;
+		filt[6] = -1.0f/5.0f;
+		filt[7] =  4.0f/105.0f;
+		filt[8] = -1.0f/280.0f;
 	} else 	{
 		printf("Not developted!!!\n");
 	}
@@ -120,38 +120,38 @@ void LucasKanade::getfilters(float *filt_x, float *filt_y, float *filt_t, int sp
 		filt_x[i] = filt_y[i] = filt[i];
 
 	if (temp_filt_size==1){
-		filt[0] = 1;
+		filt[0] = 1.0f;
 	} else if (temp_filt_size==2){
-		filt[0] = -1.0;
-		filt[1] =  1.0;
+		filt[0] = -1.0f;
+		filt[1] =  1.0f;
 	} else if (temp_filt_size==3){
-		filt[0] = -1.0/2.0;
-		filt[1] =    0;
-		filt[2] =  1.0/2.0;
+		filt[0] = -1.0f/2.0f;
+		filt[1] =    0.0f;
+		filt[2] =  1.0f/2.0f;
 	} else if (temp_filt_size==5){
-		filt[0] =  1.0/12.0;
-		filt[1] = -2.0/3.0;
-		filt[2] =    0;
-		filt[3] =  2.0/3.0;
-		filt[4] = -1.0/12.0;
+		filt[0] =  1.0f/12.0f;
+		filt[1] = -2.0f/3.0f;
+		filt[2] =    0.0f;
+		filt[3] =  2.0f/3.0f;
+		filt[4] = -1.0f/12.0f;
 	} else if (temp_filt_size==7){
-		filt[0] = -1.0/60.0;
-		filt[1] =  3.0/20.0;
-		filt[2] = -3.0/4.0;
-		filt[3] =    0;
-		filt[4] =  3.0/4.0;	
-		filt[5] = -3.0/20.0;
-		filt[6] =  1.0/60.0;
+		filt[0] = -1.0f/60.0f;
+		filt[1] =  3.0f/20.0f;
+		filt[2] = -3.0f/4.0f;
+		filt[3] =    0.0f;
+		filt[4] =  3.0f/4.0f;	
+		filt[5] = -3.0f/20.0f;
+		filt[6] =  1.0f/60.0f;
 	} else if (temp_filt_size==9){
-		filt[0] =  1.0/280.0;
-		filt[1] = -4.0/105.0;
-		filt[2] =  1.0/5.0;
-		filt[3] = -4.0/5.0;
-		filt[4] =    0;	
-		filt[5] =  4.0/5.0;
-		filt[6] = -1.0/5.0;
-		filt[7] =  4.0/105.0;
-		filt[8] = -1.0/280.0;
+		filt[0] =  1.0f/280.0f;
+		filt[1] = -4.0f/105.0f;
+		filt[2] =  1.0f/5.0f;
+		filt[3] = -4.0f/5.0f;
+		filt[4] =    0.0f;	
+		filt[5] =  4.0f/5.0f;
+		filt[6] = -1.0f/5.0f;
+		filt[7] =  4.0f/105.0f;
+		filt[8] = -1.0f/280.0f;
 	} else 	{
 		printf("Not developted!!!\n");
 	}

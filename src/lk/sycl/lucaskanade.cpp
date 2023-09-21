@@ -58,25 +58,17 @@ void LucasKanade::lucas_kanade(float *Vx, float *Vy, int iframe)
 	unsigned char* d_frame = d_wind_frames + (((iframe+1)%temp_filt_size)*nx*ny);
 
 	// It
-	std::cout << "kk0" << std::endl;
 	temp_convolution_GPU_wrapper(_queue, iframe, d_It, d_wind_frames, nx, ny, d_filt_t, temp_filt_size);
-	_queue.wait();
-	std::cout << "kk" << std::endl;
 
 	// Ix = imfilter(frame, filter_x,'left-top');
 	spac_convolution2D_x_GPU_wrapper(_queue, d_Ix, d_frame, nx, ny, d_filt_x, spac_filt_size);
-	_queue.wait();
-	std::cout << "kk1" << std::endl;
 
 	// Iy = imfilter(frame, filter_y,'left-top');
 	spac_convolution2D_y_GPU_wrapper(_queue, d_Iy, d_frame, nx, ny, d_filt_y, spac_filt_size);
-	_queue.wait();
 	std::cout << "kk2" << std::endl;
 
 	luca_kanade_1step_GPU_wrapper(_queue, Vx, Vy, d_Vx, d_Vy, d_Ix, d_Iy, d_It,
 		spac_filt_size, temp_filt_size, window_size, nx, ny);
-
-    _queue.wait();
 	std::cout << "kk3" << std::endl;
 }
 

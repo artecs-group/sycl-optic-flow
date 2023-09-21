@@ -35,7 +35,7 @@ void temp_convolution_GPU_wrapper(sycl::queue queue, int iframe, float *It, unsi
 					}
 				}
 			}
-		});
+		}).wait();
 }
 
 
@@ -77,7 +77,7 @@ void spac_convolution2D_x_GPU_wrapper(sycl::queue queue, float *Ix, unsigned cha
 					}
 				}
 			}
-		});
+		}).wait();
 }
 
 
@@ -120,7 +120,7 @@ void spac_convolution2D_y_GPU_wrapper(sycl::queue queue, float *Iy, unsigned cha
 					}
 				}
 			}
-		});
+		}).wait();
 }
 
 
@@ -134,7 +134,7 @@ void luca_kanade_1step_GPU_wrapper(sycl::queue queue, float *Vx, float *Vy, floa
 	if (nx%NTHREADS2D>0) blocksX++;
 	int blocksY = ny/NTHREADS2D;
 	if (ny%NTHREADS2D>0) blocksY++;
-        sycl::range<3> dimBlock(1, blocksY, blocksX);
+    sycl::range<3> dimBlock(1, blocksY, blocksX);
 
 
 	queue.parallel_for(sycl::nd_range<3>(dimBlock * nThs, nThs), [=](sycl::nd_item<3> item) 

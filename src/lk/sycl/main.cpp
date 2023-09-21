@@ -145,83 +145,73 @@ int App::run() {
     cv::TickMeter timer;
     
     // Iterate over all frames
-    try {
-        while (isRunning()) {
-            timer.reset();
-            timer.start();
+    while (isRunning()) {
+        timer.reset();
+        timer.start();
 
-            m_cap.read(m_frame);
+        m_cap.read(m_frame);
 
-            cv::Mat m_frameGray;
-            cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
+        cv::Mat m_frameGray;
+        cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
-            if (m_process) {
-                lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
-                if (processedFrames >= temp_conv_size-1) {
-                    lk.lucas_kanade(Vx, Vy, processedFrames);
-                }
+        if (m_process) {
+            lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
+            if (processedFrames >= temp_conv_size-1) {
+                lk.lucas_kanade(Vx, Vy, processedFrames);
             }
-            timer.stop();
-            fps += 1000 / timer.getTimeMilli();
-
-            if (m_show_ui) {
-                try {
-                    if(m_process && (processedFrames >= temp_conv_size-1))
-                        flowToColor(width, height, Vx, Vy, m_frameGray);
-                    cv::Mat imgToShow = m_frameGray;
-                    std::ostringstream msg, msg2;
-                    int currentFPS = 1000 / timer.getTimeMilli();
-                    msg << devName;
-                    msg2 << "FPS " << currentFPS << " (" << imgToShow.size
-                        << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
-                        << " (process: " << (m_process ? "True" : "False") << ")";
-
-                    cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-                    cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
-                    cv::imshow("Optic Flow", imgToShow);
-                    int key = waitKey(1);
-                    switch (key) {
-                    case 27:  // ESC
-                        m_running = false;
-                        break;
-
-                    case 'p':  // fallthru
-                    case 'P':
-                        m_process = !m_process;
-                        break;
-
-                    default:
-                        break;
-                    }
-                }
-                catch (const std::exception& e) {
-                    std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
-                    if (processedFrames > 0) {
-                        delete[] Vx;
-                        delete[] Vy;
-                        throw;
-                    }
-                    m_show_ui = false;  // UI is not available
-                }
-            }
-
-            processedFrames++;
-
-            if (!m_show_ui && (processedFrames > 100)) 
-                m_running = false;
         }
-        std::cout << std::endl;
-        std::cout << "Number of frames = " << processedFrames << std::endl;
-        std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
+        timer.stop();
+        fps += 1000 / timer.getTimeMilli();
+
+        if (m_show_ui) {
+            try {
+                if(m_process && (processedFrames >= temp_conv_size-1))
+                    flowToColor(width, height, Vx, Vy, m_frameGray);
+                cv::Mat imgToShow = m_frameGray;
+                std::ostringstream msg, msg2;
+                int currentFPS = 1000 / timer.getTimeMilli();
+                msg << devName;
+                msg2 << "FPS " << currentFPS << " (" << imgToShow.size
+                    << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
+                    << " (process: " << (m_process ? "True" : "False") << ")";
+
+                cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+                cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+                cv::imshow("Optic Flow", imgToShow);
+                int key = waitKey(1);
+                switch (key) {
+                case 27:  // ESC
+                    m_running = false;
+                    break;
+
+                case 'p':  // fallthru
+                case 'P':
+                    m_process = !m_process;
+                    break;
+
+                default:
+                    break;
+                }
+            }
+            catch (const std::exception& e) {
+                std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
+                if (processedFrames > 0) {
+                    delete[] Vx;
+                    delete[] Vy;
+                    throw;
+                }
+                m_show_ui = false;  // UI is not available
+            }
+        }
+
+        processedFrames++;
+
+        if (!m_show_ui && (processedFrames > 100)) 
+            m_running = false;
     }
-    catch (const std::exception& e) {
-        std::cout << std::endl;
-        std::cout << "Number of frames = " << processedFrames << std::endl;
-        std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
-        delete[] Vx;
-        delete[] Vy;
-        return 0;
-    }
+    std::cout << std::endl;
+    std::cout << "Number of frames = " << processedFrames << std::endl;
+    std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
 
     delete[] Vx;
     delete[] Vy;

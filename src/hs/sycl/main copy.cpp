@@ -1,3 +1,5 @@
+#include <sycl/sycl.hpp>
+#include <dpct/dpct.hpp>
 #include <string>
 #include <cmath>
 #include <iostream>
@@ -7,7 +9,9 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include "flow.cuh"
+#include "common.h"
+#include "flowGold.h"
+#include "flowSYCL.h"
 
 using namespace cv;
 
@@ -16,7 +20,7 @@ class App {
 public:
     App(const CommandLineParser& cmd);
     void initVideoSource();
-    void initCuda();
+    void initSYCL();
     int run();
     bool isRunning() { return m_running; }
     bool doProcess() { return m_process; }
@@ -36,6 +40,7 @@ private:
     float                       m_frequency;
 
     std::string                 m_file_name;
+    int                         m_camera_id;
     cv::VideoCapture            m_cap;
     cv::Mat                     m_frame;
 };
@@ -51,9 +56,7 @@ App::App(const CommandLineParser& cmd)
 } // ctor
 
 
-void App::initCuda() {
-
-}
+void App::initSYCL() {}
 
 
 void App::initVideoSource()
@@ -108,25 +111,14 @@ void App::flowToColor(int width, int height, const float* Vx, const float* Vy, c
     cv::cvtColor(hsv, outFrame, cv::COLOR_HSV2BGR);
 }
 
-void transformImage_uchar2float(unsigned char* in, float* out, int width, int height)
-{
-    #pragma omp parallel for
-    for(int c=0; c < 4; c++) {
-        for(int i=0; i<height; i++)
-            #pragma omp simd
-            for(int j=0; j<width; j++)
-                out[c*width*height + i*width + j] = (float)(in[c*width*height + i*width + j]);
-    }
-}
 
 int App::run() {
     std::cout << "Initializing..." << std::endl;
 
-    //initCuda();
-    cudaDeviceProp devProps;
-    cudaGetDeviceProperties(&devProps, 0);
-    std::string devName = devProps.name; 
-    
+    initSYCL();
+    const std::string devName = m_syclQueue.get_device().get_info<sycl::info::device::name>();
+    std::cout << "Running on: " << devName << std::endl;
+
     initVideoSource();
 
     std::cout << "Press ESC to exit" << std::endl;
@@ -135,35 +127,18 @@ int App::run() {
     m_running = true;
     m_process = true;
 
-    const int width   = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
-    const int height  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     const int nframes = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_COUNT));
 
     constexpr int temp_conv_size{2};
-    constexpr float alpha{0.2f};
-    // number of pyramid levels
-    constexpr int nLevels{5};
-
-    // number of solver iterations on each level
-    constexpr int nSolverIters{500};
-
-    // number of warping iterations
-    constexpr int nWarpIters{3};
-
-    // row access stride
-    int stride = width;
-
-    // Allocate mem in GPU
-    initFlow(nLevels, stride, width, height);
-
-    float* ImageIn0 = new float [width*height*4];
-    float* ImageIn1 = new float [width*height*4];
-    float *Im0, *Im1;
+    constexpr int spac_conv_size{3};
+    constexpr int window_size{5};
 
     float* Vx = new float [width*height];
     float* Vy = new float [width*height];
+    LucasKanade lk(m_syclQueue, spac_conv_size, temp_conv_size, window_size, width, height);
 
-    // buffers required for the image proccesing
     unsigned int processedFrames{0};
     double fps{0};
     cv::TickMeter timer;
@@ -176,22 +151,13 @@ int App::run() {
 
             m_cap.read(m_frame);
 
-            cv::Mat m_frameRgba;
-            cv::cvtColor(m_frame, m_frameRgba, cv::COLOR_BGR2BGRA);
+            cv::Mat m_frameGray;
+            cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-		if(processedFrames%2){
-                    transformImage_uchar2float(m_frameRgba.data, ImageIn1, width, height);
-                    Im0 = ImageIn1;
-                    Im1 = ImageIn0;
-		} else {
-                    transformImage_uchar2float(m_frameRgba.data, ImageIn0, width, height);
-                    Im0 = ImageIn0;
-                    Im1 = ImageIn1;
-		}
+                lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
                 if (processedFrames >= temp_conv_size-1) {
-                    ComputeFlow(Im0, Im1, 
-                        width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
+                    lk.lucas_kanade(Vx, Vy, processedFrames);
                 }
             }
             timer.stop();
@@ -200,8 +166,8 @@ int App::run() {
             if (m_show_ui) {
                 try {
                     if(m_process && (processedFrames >= temp_conv_size-1))
-                        flowToColor(width, height, Vx, Vy, m_frameRgba);
-                    cv::Mat imgToShow = m_frameRgba;
+                        flowToColor(width, height, Vx, Vy, m_frameGray);
+                    cv::Mat imgToShow = m_frameGray;
                     std::ostringstream msg, msg2;
                     int currentFPS = 1000 / timer.getTimeMilli();
                     msg << devName;
@@ -255,8 +221,6 @@ int App::run() {
         delete[] Vy;
         return 0;
     }
-
-    deleteFlow_mem(nLevels);
 
     delete[] Vx;
     delete[] Vy;

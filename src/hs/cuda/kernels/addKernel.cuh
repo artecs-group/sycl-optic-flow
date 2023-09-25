@@ -13,7 +13,7 @@
  *
  */
 
-#include "../common.h"
+#include "../common.cuh"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief add two vectors of size _count_

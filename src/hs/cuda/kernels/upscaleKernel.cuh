@@ -13,7 +13,7 @@
  *
  */
 
-#include "../common.h"
+#include "../common.cuh"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief upscale one component of a displacement field, CUDA kernel

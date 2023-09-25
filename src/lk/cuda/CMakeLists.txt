@@ -32,7 +32,7 @@ find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 add_executable(${This} ${Source} ${Headers})
 
-set(CXXFLAGS "-O3" "-lcublas" ${EXTRA_FLAGS})
+set(CXXFLAGS "-O3" ${EXTRA_FLAGS})
 target_compile_options(${This} PRIVATE ${CXXFLAGS})
 target_link_directories(${This} PRIVATE)
 target_link_libraries(${This} ${OpenCV_LIBS} ${CXXFLAGS})

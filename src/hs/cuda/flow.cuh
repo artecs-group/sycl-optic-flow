@@ -13,12 +13,12 @@
  *
  */
 
-#ifndef FLOW_CUDA_H
-#define FLOW_CUDA_H
+#ifndef FLOW_H
+#define FLOW_H
 
 void initFlow(int nLevels, int stride, int width, int height);
 
-void ComputeFlowCUDA(const float *I0,  // source frame
+void ComputeFlow(const float *I0,  // source frame
                      const float *I1,  // tracked frame
                      int width,        // frame width
                      int height,       // frame height

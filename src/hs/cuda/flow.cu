@@ -13,7 +13,7 @@
  *
  */
 
-#include "common.h"
+#include "common.cuh"
 
 // include kernels
 #include "kernels/downscaleKernel.cuh"
@@ -42,7 +42,6 @@
 void initFlow(int nLevels, int stride, int width, int height)
 {
     const int dataSize = stride * height * sizeof(float);
-    int currentLevel = nLevels - 1;
 
     checkCudaErrors(cudaMalloc(&d_tmp, dataSize));
     checkCudaErrors(cudaMalloc(&d_du0, dataSize));
@@ -92,7 +91,7 @@ void deleteFlow_mem(int nLevels)
 /// \param[out] u            horizontal displacement
 /// \param[out] v            vertical displacement
 ///////////////////////////////////////////////////////////////////////////////
-void ComputeFlowCUDA(const float *I0,
+void ComputeFlow(const float *I0,
                      const float *I1,
                      int width, int height, int stride,
                      float alpha,

@@ -14,7 +14,7 @@
  */
 
 
-#include "../common.h"
+#include "../common.cuh"
 #include <cooperative_groups.h>
 
 namespace cg = cooperative_groups;

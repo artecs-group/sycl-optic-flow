@@ -7,7 +7,7 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include "flowCUDA.h"
+#include "flow.cuh"
 
 using namespace cv;
 
@@ -188,7 +188,7 @@ int App::run() {
                     Im1 = ImageIn1;
 		}
                 if (processedFrames >= temp_conv_size-1) {
-                    ComputeFlowCUDA(Im0, Im1, 
+                    ComputeFlow(Im0, Im1, 
                         width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
                 }
             }

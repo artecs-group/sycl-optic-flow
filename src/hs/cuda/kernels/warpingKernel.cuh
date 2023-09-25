@@ -14,7 +14,7 @@
  */
 
 
-#include "../common.h"
+#include "../common.cuh"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief warp image with a given displacement field, CUDA kernel.

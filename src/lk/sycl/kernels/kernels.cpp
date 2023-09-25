@@ -19,7 +19,7 @@ void temp_convolution_GPU_wrapper(sycl::queue queue, int iframe, float *It, unsi
 	if (ny%NTHREADS2D>0) blocksY++;
     sycl::range<3> dimBlock(1, blocksY, blocksX);
 
-	queue.parallel_for(
+	queue.parallel_for<class temp_convolution>(
 		sycl::nd_range<3>(dimBlock * nThs, nThs),
 		[=](sycl::nd_item<3> item) {
 			int i = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
@@ -35,7 +35,7 @@ void temp_convolution_GPU_wrapper(sycl::queue queue, int iframe, float *It, unsi
 					}
 				}
 			}
-		}).wait();
+		});
 }
 
 
@@ -47,7 +47,7 @@ void spac_convolution2D_x_GPU_wrapper(sycl::queue queue, float *Ix, unsigned cha
 	if (ny%NTHREADS2D>0) blocksY++;
     sycl::range<3> dimBlock(1, blocksY, blocksX);
 
-	queue.parallel_for(
+	queue.parallel_for<class spac_convolution2D_x>(
 		sycl::nd_range<3>(dimBlock * nThs, nThs), [=](sycl::nd_item<3> item)
 		{
 			int filter_center = (filter_size-1)/2;
@@ -77,7 +77,7 @@ void spac_convolution2D_x_GPU_wrapper(sycl::queue queue, float *Ix, unsigned cha
 					}
 				}
 			}
-		}).wait();
+		});
 }
 
 
@@ -89,7 +89,7 @@ void spac_convolution2D_y_GPU_wrapper(sycl::queue queue, float *Iy, unsigned cha
 	if (ny%NTHREADS2D>0) blocksY++;
         sycl::range<3> dimBlock(1, blocksY, blocksX);
 
-	queue.parallel_for(
+	queue.parallel_for<class spac_convolution2D_y>(
 		sycl::nd_range<3>(dimBlock * nThs, nThs), [=](sycl::nd_item<3> item)
 		{
 			int filter_center = (filter_size-1)/2;
@@ -120,7 +120,7 @@ void spac_convolution2D_y_GPU_wrapper(sycl::queue queue, float *Iy, unsigned cha
 					}
 				}
 			}
-		}).wait();
+		});
 }
 
 
@@ -137,20 +137,19 @@ void luca_kanade_1step_GPU_wrapper(sycl::queue queue, float *Vx, float *Vy, floa
     sycl::range<3> dimBlock(1, blocksY, blocksX);
 
 
-	queue.parallel_for(sycl::nd_range<3>(dimBlock * nThs, nThs), [=](sycl::nd_item<3> item) 
+	queue.parallel_for<class luca_kanade_1step>(sycl::nd_range<3>(dimBlock * nThs, nThs), [=](sycl::nd_item<3> item) 
 	{
 		float sumIx2 =0.0f;
 		float sumIxIy=0.0f;
 		float sumIy2 =0.0f;
 		float sumIxIt=0.0f;
 		float sumIyIt=0.0f;
-		int i, j, ii, jj;
 		int pixel_id;
 
 		int window_center = (window_size-1)/2;
 
-		i = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
-		j = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
+		int i = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
+		int j = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
 		if (i>=window_center && j>=window_center && i<ny-window_center && j<nx-window_center){
 
@@ -160,8 +159,8 @@ void luca_kanade_1step_GPU_wrapper(sycl::queue queue, float *Vx, float *Vy, floa
 			sumIxIt=0.0f;
 			sumIyIt=0.0f;
 
-			for (ii=-window_center;ii<=window_center; ii++)
-				for (jj=-window_center;jj<=window_center; jj++)
+			for (int ii=-window_center;ii<=window_center; ii++)
+				for (int jj=-window_center;jj<=window_center; jj++)
 				{
 					pixel_id = (i+ii)*nx+(j+jj);
 					sumIx2  += Ix[pixel_id]*Ix[pixel_id];
@@ -175,15 +174,15 @@ void luca_kanade_1step_GPU_wrapper(sycl::queue queue, float *Vx, float *Vy, floa
 
 			//Luca-Kanade desarrollado el producto vectorial con la inversa 2x2
 			if (detA!=0.0f){
-				Vx[i*nx+j] = 1.0f/detA*(sumIy2*(-sumIxIt)     + (-sumIxIy)*(-sumIyIt));
-				Vy[i*nx+j] = 1.0f/detA*((-sumIxIy)*(-sumIxIt) + sumIx2*(-sumIyIt));
+				d_Vx[i*nx+j] = 1.0f/detA*(sumIy2*(-sumIxIt)     + (-sumIxIy)*(-sumIyIt));
+				d_Vy[i*nx+j] = 1.0f/detA*((-sumIxIy)*(-sumIxIt) + sumIx2*(-sumIyIt));
 				
 			} else {
-				Vx[i*nx+j] = 0.0f;
-				Vy[i*nx+j] = 0.0f;
+				d_Vx[i*nx+j] = 0.0f;
+				d_Vy[i*nx+j] = 0.0f;
 			}
 		}
-	}).wait();
+	});
 
 	queue.memcpy(Vx, d_Vx, nx * ny * sizeof(float)).wait();
 	queue.memcpy(Vy, d_Vy, nx * ny * sizeof(float)).wait();

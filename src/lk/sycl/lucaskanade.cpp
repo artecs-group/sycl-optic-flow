@@ -65,11 +65,11 @@ void LucasKanade::lucas_kanade(float *Vx, float *Vy, int iframe)
 
 	// Iy = imfilter(frame, filter_y,'left-top');
 	spac_convolution2D_y_GPU_wrapper(_queue, d_Iy, d_frame, nx, ny, d_filt_y, spac_filt_size);
-	std::cout << "kk2" << std::endl;
 
 	luca_kanade_1step_GPU_wrapper(_queue, Vx, Vy, d_Vx, d_Vy, d_Ix, d_Iy, d_It,
 		spac_filt_size, temp_filt_size, window_size, nx, ny);
-	std::cout << "kk3" << std::endl;
+	
+	_queue.wait();
 }
 
 

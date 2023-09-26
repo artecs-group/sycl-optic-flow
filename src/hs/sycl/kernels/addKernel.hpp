@@ -27,7 +27,7 @@
 
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
-#include "common.h"
+#include "../common.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief add two vectors of size _count_

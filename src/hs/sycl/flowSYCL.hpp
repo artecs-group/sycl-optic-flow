@@ -28,7 +28,10 @@
 #ifndef FLOW_CUDA_H
 #define FLOW_CUDA_H
 
-void ComputeFlowCUDA(
+#include <sycl/sycl.hpp>
+
+void ComputeFlow(
+    sycl::queue q,
     const float *I0,   // source frame
     const float *I1,   // tracked frame
     int width,         // frame width
@@ -40,4 +43,7 @@ void ComputeFlowCUDA(
     int nSolverIters,  // number of solver iterations (for linear system)
     float *u,          // output horizontal flow
     float *v);         // output vertical flow
+
+void initFlow(sycl::queue q, int nLevels, int stride, int width, int height);
+void deleteFlow_mem(sycl::queue q, int nLevels);
 #endif

@@ -27,7 +27,7 @@
 
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
-#include "common.h"
+#include "../common.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief warp image with a given displacement field, CUDA kernel.

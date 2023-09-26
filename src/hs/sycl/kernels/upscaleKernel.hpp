@@ -27,7 +27,7 @@
 
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
-#include "common.h"
+#include "../common.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief upscale one component of a displacement field, CUDA kernel

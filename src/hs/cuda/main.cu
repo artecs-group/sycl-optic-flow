@@ -111,12 +111,10 @@ void App::flowToColor(int width, int height, const float* Vx, const float* Vy, c
 void transformImage_uchar2float(unsigned char* in, float* out, int width, int height)
 {
     #pragma omp parallel for
-    for(int c=0; c < 4; c++) {
-        for(int i=0; i<height; i++)
-            #pragma omp simd
-            for(int j=0; j<width; j++)
-                out[c*width*height + i*width + j] = (float)(in[c*width*height + i*width + j]);
-    }
+    for(int i=0; i<height; i++)
+        #pragma omp simd
+        for(int j=0; j<width; j++)
+            out[i*width+j] = (float)(in[i*width+j]);
 }
 
 int App::run() {
@@ -139,7 +137,6 @@ int App::run() {
     const int height  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
     const int nframes = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_COUNT));
 
-    constexpr int temp_conv_size{2};
     constexpr float alpha{0.2f};
     // number of pyramid levels
     constexpr int nLevels{5};
@@ -156,8 +153,8 @@ int App::run() {
     // Allocate mem in GPU
     initFlow(nLevels, stride, width, height);
 
-    float* ImageIn0 = new float [width*height*4];
-    float* ImageIn1 = new float [width*height*4];
+    float* ImageIn0 = new float [width*height];
+    float* ImageIn1 = new float [width*height];
     float *Im0, *Im1;
 
     float* Vx = new float [width*height];
@@ -176,32 +173,29 @@ int App::run() {
 
             m_cap.read(m_frame);
 
-            cv::Mat m_frameRgba;
-            cv::cvtColor(m_frame, m_frameRgba, cv::COLOR_BGR2BGRA);
+            cv::Mat m_frameGray;
+            cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-		if(processedFrames%2){
-                    transformImage_uchar2float(m_frameRgba.data, ImageIn1, width, height);
+		        if(processedFrames%2){
+                    transformImage_uchar2float(m_frameGray.data, ImageIn1, width, height);
                     Im0 = ImageIn1;
                     Im1 = ImageIn0;
-		} else {
-                    transformImage_uchar2float(m_frameRgba.data, ImageIn0, width, height);
+		        } else {
+                    transformImage_uchar2float(m_frameGray.data, ImageIn0, width, height);
                     Im0 = ImageIn0;
                     Im1 = ImageIn1;
-		}
-                if (processedFrames >= temp_conv_size-1) {
-                    ComputeFlow(Im0, Im1, 
-                        width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
-                }
+		        }
+                ComputeFlow(Im0, Im1, width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
             }
             timer.stop();
             fps += 1000 / timer.getTimeMilli();
 
             if (m_show_ui) {
                 try {
-                    if(m_process && (processedFrames >= temp_conv_size-1))
-                        flowToColor(width, height, Vx, Vy, m_frameRgba);
-                    cv::Mat imgToShow = m_frameRgba;
+                    if(m_process)
+                        flowToColor(width, height, Vx, Vy, m_frameGray);
+                    cv::Mat imgToShow = m_frameGray;
                     std::ostringstream msg, msg2;
                     int currentFPS = 1000 / timer.getTimeMilli();
                     msg << devName;
@@ -230,8 +224,11 @@ int App::run() {
                 catch (const std::exception& e) {
                     std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
                     if (processedFrames > 0) {
+                        delete[] ImageIn0;
+                        delete[] ImageIn1;
                         delete[] Vx;
                         delete[] Vy;
+                        deleteFlow_mem(nLevels);
                         throw;
                     }
                     m_show_ui = false;  // UI is not available
@@ -251,15 +248,19 @@ int App::run() {
         std::cout << std::endl;
         std::cout << "Number of frames = " << processedFrames << std::endl;
         std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
+        delete[] ImageIn0;
+        delete[] ImageIn1;
         delete[] Vx;
         delete[] Vy;
+        deleteFlow_mem(nLevels);
         return 0;
     }
 
-    deleteFlow_mem(nLevels);
-
+    delete[] ImageIn0;
+    delete[] ImageIn1;
     delete[] Vx;
     delete[] Vy;
+    deleteFlow_mem(nLevels);
     return 0;
 }
 

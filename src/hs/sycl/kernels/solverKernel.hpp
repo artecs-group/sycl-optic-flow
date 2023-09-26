@@ -27,7 +27,7 @@
 
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
-#include "common.h"
+#include "../common.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief one iteration of classical Horn-Schunck method, CUDA kernel.

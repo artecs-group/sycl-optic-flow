@@ -1,261 +1,314 @@
-/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-const static char *const sSDKsample = "HSOpticalFlow";
-
-// CPU-GPU discrepancy threshold for self-test
-const float THRESHOLD = 0.05f;
-
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
-
-#include "common.h"
-#include "flowGold.h"
-#include "flowSYCL.h"
-
-#include <helper_functions.h>
+#include <string>
 #include <cmath>
-#include <chrono>
+#include <iostream>
 
-using Time = std::chrono::steady_clock;
-using ms = std::chrono::milliseconds;
-using float_ms = std::chrono::duration<float, ms::period>;
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/imgproc.hpp>
 
-///////////////////////////////////////////////////////////////////////////////
-/// \brief save optical flow in format described on vision.middlebury.edu/flow
-/// \param[in] name output file name
-/// \param[in] w    optical flow field width
-/// \param[in] h    optical flow field height
-/// \param[in] s    optical flow field row stride
-/// \param[in] u    horizontal displacement
-/// \param[in] v    vertical displacement
-///////////////////////////////////////////////////////////////////////////////
-void WriteFloFile(const char *name, int w, int h, int s, const float *u,
-                  const float *v) {
-  FILE *stream;
-  stream = fopen(name, "wb");
+#include "common.hpp"
+#include "flowSYCL.hpp"
 
-  if (stream == 0) {
-    printf("Could not save flow to \"%s\"\n", name);
-    return;
-  }
+using namespace cv;
 
-  float data = 202021.25f;
-  fwrite(&data, sizeof(float), 1, stream);
-  fwrite(&w, sizeof(w), 1, stream);
-  fwrite(&h, sizeof(h), 1, stream);
 
-  for (int i = 0; i < h; ++i) {
-    for (int j = 0; j < w; ++j) {
-      const int pos = j + i * s;
-      fwrite(u + pos, sizeof(float), 1, stream);
-      fwrite(v + pos, sizeof(float), 1, stream);
+class App {
+public:
+    App(const CommandLineParser& cmd);
+    void initVideoSource();
+    void initSYCL();
+    int run();
+    bool isRunning() { return m_running; }
+    bool doProcess() { return m_process; }
+    void setRunning(bool running)      { m_running = running; }
+    void setDoProcess(bool process)    { m_process = process; }
+    void flowToColor(int width, int height, const float* Vx, const float* Vy, cv::Mat& outFrame);
+    void transformImage_uchar2float(unsigned char* in, float* out, int width, int height);
+protected:
+    void handleKey(char key);
+private:
+    bool                        m_running;
+    bool                        m_process;
+    bool                        m_show_ui;
+
+    int64_t                     m_t0;
+    int64_t                     m_t1;
+    float                       m_time;
+    float                       m_frequency;
+
+    std::string                 m_file_name;
+    int                         m_camera_id;
+    cv::VideoCapture            m_cap;
+    cv::Mat                     m_frame;
+};
+
+
+App::App(const CommandLineParser& cmd)
+{
+    m_file_name  = cmd.get<std::string>("video");
+    m_show_ui    = cmd.get<bool>("show");
+
+    m_running    = false;
+    m_process    = false;
+} // ctor
+
+
+void App::initSYCL() {}
+
+
+void App::initVideoSource()
+{
+    if (!m_file_name.empty())
+    {
+        m_cap.open(samples::findFileOrKeep(m_file_name));
+        if (!m_cap.isOpened())
+            throw std::runtime_error(std::string("can't open video stream: ") + m_file_name);
     }
-  }
+    else
+        throw std::runtime_error(std::string("specify video source"));
+} // initVideoSource()
 
-  fclose(stream);
-}
 
-///////////////////////////////////////////////////////////////////////////////
-/// \brief
-/// load 4-channel unsigned byte image
-/// and convert it to single channel FP32 image
-/// \param[out] img_data pointer to raw image data
-/// \param[out] img_w    image width
-/// \param[out] img_h    image height
-/// \param[out] img_s    image row stride
-/// \param[in]  name     image file name
-/// \param[in]  exePath  executable file path
-/// \return true if image is successfully loaded or false otherwise
-///////////////////////////////////////////////////////////////////////////////
-bool LoadImageAsFP32(float *&img_data, int &img_w, int &img_h, int &img_s,
-                     const char *name, const char *exePath) {
-  printf("Loading \"%s\" ...\n", name);
-  char *name_ = sdkFindFilePath(name, exePath);
+void App::flowToColor(int width, int height, const float* Vx, const float* Vy, cv::Mat& outFrame) {
+    cv::Mat flow_magnitude(height, width, CV_32F);
+    cv::Mat flow_angle(height, width, CV_32F);
 
-  if (!name_) {
-    printf("File not found\n");
-    return false;
-  }
-
-  unsigned char *data = 0;
-  unsigned int w = 0, h = 0;
-  bool result = sdkLoadPPM4ub(name_, &data, &w, &h);
-
-  if (result == false) {
-    printf("Invalid file format\n");
-    return false;
-  }
-
-  img_w = w;
-  img_h = h;
-  img_s = iAlignUp(img_w);
-
-  img_data = new float[img_s * h];
-
-  // source is 4 channel image
-  const int widthStep = 4 * img_w;
-
-  for (int i = 0; i < img_h; ++i) {
-    for (int j = 0; j < img_w; ++j) {
-      img_data[j + i * img_s] = ((float)data[j * 4 + i * widthStep]) / 255.0f;
+    // Populate the flow_magnitude and flow_angle matrices from the flowData array
+    #pragma omp parallel for
+    for (int y = 0; y < height; ++y) {
+        #pragma omp simd
+        for (int x = 0; x < width; ++x) {
+            int index = y * width + x;
+            float u = Vx[index];
+            float v = Vy[index];
+            flow_magnitude.at<float>(y, x) = std::sqrt(u * u + v * v);
+            flow_angle.at<float>(y, x) = std::atan2(v, u);
+        }
     }
-  }
 
-  return true;
-}
+    flow_magnitude = cv::min(flow_magnitude * 10.0f, 255.0f);
+    flow_magnitude.convertTo(flow_magnitude, CV_8U);
 
-///////////////////////////////////////////////////////////////////////////////
-/// \brief compare given flow field with gold (L1 norm)
-/// \param[in] width    optical flow field width
-/// \param[in] height   optical flow field height
-/// \param[in] stride   optical flow field row stride
-/// \param[in] h_uGold  horizontal displacement, gold
-/// \param[in] h_vGold  vertical displacement, gold
-/// \param[in] h_u      horizontal displacement
-/// \param[in] h_v      vertical displacement
-/// \return true if discrepancy is lower than a given threshold
-///////////////////////////////////////////////////////////////////////////////
-bool CompareWithGold(int width, int height, int stride, const float *h_uGold,
-                     const float *h_vGold, const float *h_u, const float *h_v) {
-  float error = 0.0f;
+    flow_angle = flow_angle * 180.0f / CV_PI / 2.0f;
+    flow_angle.convertTo(flow_angle, CV_8U);
 
-  for (int i = 0; i < height; ++i) {
-    for (int j = 0; j < width; ++j) {
-      const int pos = j + i * stride;
-      error += fabsf(h_u[pos] - h_uGold[pos]) + fabsf(h_v[pos] - h_vGold[pos]);
+    cv::Mat hsv(height, width, CV_8UC3, cv::Scalar(0, 255, 255));
+
+    hsv.at<cv::Vec3b>(cv::Point(0, 0))[0] = 0;
+    #pragma omp parallel for
+    for (int y = 0; y < height; ++y) {
+        #pragma omp simd
+        for (int x = 0; x < width; ++x) {
+            hsv.at<cv::Vec3b>(y, x)[0] = static_cast<uint8_t>(flow_angle.at<uint8_t>(y, x));
+            hsv.at<cv::Vec3b>(y, x)[1] = 255;
+            hsv.at<cv::Vec3b>(y, x)[2] = flow_magnitude.at<uint8_t>(y, x);
+        }
     }
-  }
 
-  error /= (float)(width * height);
-
-  printf("L1 error : %.6f\n", error);
-
-  return (error < 1.0f);
+    cv::cvtColor(hsv, outFrame, cv::COLOR_HSV2BGR);
 }
 
-///////////////////////////////////////////////////////////////////////////////
-/// application entry point
-///////////////////////////////////////////////////////////////////////////////
-int main(int argc, char **argv) {
-  // welcome message
-  printf("%s Starting...\n\n", sSDKsample);
 
-  // find images
-  const char *const sourceFrameName = "frame10.ppm";
-  const char *const targetFrameName = "frame11.ppm";
-
-  // image dimensions
-  int width;
-  int height;
-  // row access stride
-  int stride;
-
-  // flow is computed from source image to target image
-  float *h_source;  // source image, host memory
-  float *h_target;  // target image, host memory
-
-  // load image from file
-  if (!LoadImageAsFP32(h_source, width, height, stride, sourceFrameName,
-                       argv[0])) {
-    exit(EXIT_FAILURE);
-  }
-
-  if (!LoadImageAsFP32(h_target, width, height, stride, targetFrameName,
-                       argv[0])) {
-    exit(EXIT_FAILURE);
-  }
-
-  // allocate host memory for CPU results
-  float *h_uGold = new float[stride * height];
-  float *h_vGold = new float[stride * height];
-
-  // allocate host memory for GPU results
-  float *h_u = new float[stride * height];
-  float *h_v = new float[stride * height];
-
-  // smoothness
-  // if image brightness is not within [0,1]
-  // this paramter should be scaled appropriately
-  const float alpha = 0.2f;
-
-  // number of pyramid levels
-  const int nLevels = 5;
-
-  // number of solver iterations on each level
-  const int nSolverIters = 500;
-
-  // number of warping iterations
-  const int nWarpIters = 3;
-
-  // start Host Timer
-  auto startGoldTime = Time::now();
-  ComputeFlowGold(h_source, h_target, width, height, stride, alpha, nLevels,
-                  nWarpIters, nSolverIters, h_uGold, h_vGold);
-
-   // stop Host timer
-  auto stopGoldTime = Time::now();
-  
-  // start Device Timer
-  auto startSYCLTime = Time::now();
-  ComputeFlowCUDA(h_source, h_target, width, height, stride, alpha, nLevels,
-                  nWarpIters, nSolverIters, h_u, h_v);
-
-  // stop Device Timer
-  auto stopSYCLTime = Time::now();
-
-  auto Gold_duration =
-      std::chrono::duration_cast<float_ms>(stopGoldTime - startGoldTime)
-          .count();
-  printf("Processing time on CPU: %f (ms)\n", Gold_duration);
-
-  auto SYCL_duration =
-      std::chrono::duration_cast<float_ms>(stopSYCLTime - startSYCLTime)
-          .count();
-  printf("Processing time on Device: %f (ms)\n", SYCL_duration);
-
-  // compare results (L1 norm)
-  bool status =
-      CompareWithGold(width, height, stride, h_uGold, h_vGold, h_u, h_v);
-
-  WriteFloFile("FlowGPU.flo", width, height, stride, h_u, h_v);
-
-  WriteFloFile("FlowCPU.flo", width, height, stride, h_uGold, h_vGold);
-
-  // free resources
-  delete[] h_uGold;
-  delete[] h_vGold;
-
-  delete[] h_u;
-  delete[] h_v;
-
-  delete[] h_source;
-  delete[] h_target;
-
-  // report self-test status
-  exit(status ? EXIT_SUCCESS : EXIT_FAILURE);
+void App::transformImage_uchar2float(unsigned char* in, float* out, int width, int height)
+{
+    #pragma omp parallel for
+    for(int i=0; i<height; i++)
+        #pragma omp simd
+        for(int j=0; j<width; j++)
+            out[i*width+j] = (float)(in[i*width+j]);
 }
+
+
+int App::run() {
+    std::cout << "Initializing..." << std::endl;
+
+    initSYCL();
+    sycl::queue q{aspect_selector(sycl::aspect::image), sycl::property::queue::in_order()};
+    const std::string devName = q.get_device().get_info<sycl::info::device::name>();
+    std::cout << "Running on: " << devName << std::endl;
+
+    initVideoSource();
+
+    std::cout << "Press ESC to exit" << std::endl;
+    std::cout << "      'p' to toggle ON/OFF processing" << std::endl;
+
+    m_running = true;
+    m_process = true;
+
+    const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    const int nframes = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_COUNT));
+
+    constexpr float alpha{0.2f};
+    // number of pyramid levels
+    constexpr int nLevels{5};
+
+    // number of solver iterations on each level
+    constexpr int nSolverIters{500};
+
+    // number of warping iterations
+    constexpr int nWarpIters{3};
+
+    // row access stride
+    const int stride = width;
+
+    // Allocate mem in GPU
+    initFlow(q, nLevels, stride, width, height);
+
+    float* ImageIn0 = new float [width*height];
+    float* ImageIn1 = new float [width*height];
+    float *Im0, *Im1;
+
+    float* Vx = new float [width*height];
+    float* Vy = new float [width*height];
+
+    unsigned int processedFrames{0};
+    double fps{0};
+    cv::TickMeter timer;
+    
+    // Iterate over all frames
+    try {
+        while (isRunning()) {
+            timer.reset();
+            timer.start();
+
+            m_cap.read(m_frame);
+
+            cv::Mat m_frameGray;
+            cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
+
+            if (m_process) {
+                if(processedFrames%2){
+                    transformImage_uchar2float(m_frameGray.data, ImageIn1, width, height);
+                    Im0 = ImageIn1;
+                    Im1 = ImageIn0;
+                } else {
+                    transformImage_uchar2float(m_frameGray.data, ImageIn0, width, height);
+                    Im0 = ImageIn0;
+                    Im1 = ImageIn1;
+                }
+                ComputeFlow(q, Im0, Im1, width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
+            }
+            timer.stop();
+            fps += 1000 / timer.getTimeMilli();
+
+            if (m_show_ui) {
+                try {
+                    if(m_process)
+                        flowToColor(width, height, Vx, Vy, m_frameGray);
+                    cv::Mat imgToShow = m_frameGray;
+                    std::ostringstream msg, msg2;
+                    int currentFPS = 1000 / timer.getTimeMilli();
+                    msg << devName;
+                    msg2 << "FPS " << currentFPS << " (" << imgToShow.size
+                        << ") Time: " << cv::format("%.2f", timer.getTimeMilli()) << " msec"
+                        << " (process: " << (m_process ? "True" : "False") << ")";
+
+                    cv::putText(imgToShow, msg.str(), Point(10, 20), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+                    cv::putText(imgToShow, msg2.str(), Point(10, 50), FONT_HERSHEY_SIMPLEX, 0.6, Scalar(255, 100, 0), 2);
+                    cv::imshow("Optic Flow", imgToShow);
+                    int key = waitKey(1);
+                    switch (key) {
+                    case 27:  // ESC
+                        m_running = false;
+                        break;
+
+                    case 'p':  // fallthru
+                    case 'P':
+                        m_process = !m_process;
+                        break;
+
+                    default:
+                        break;
+                    }
+                }
+                catch (const std::exception& e) {
+                    std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
+                    if (processedFrames > 0) {
+                        delete[] ImageIn0;
+                        delete[] ImageIn1;
+                        delete[] Vx;
+                        delete[] Vy;
+                        deleteFlow_mem(q, nLevels);
+                        throw;
+                    }
+                    m_show_ui = false;  // UI is not available
+                }
+            }
+
+            processedFrames++;
+
+            if (!m_show_ui && (processedFrames > 100)) 
+                m_running = false;
+        }
+        std::cout << std::endl;
+        std::cout << "Number of frames = " << processedFrames << std::endl;
+        std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cout << std::endl;
+        std::cout << "Number of frames = " << processedFrames << std::endl;
+        std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
+        delete[] ImageIn0;
+        delete[] ImageIn1;
+        delete[] Vx;
+        delete[] Vy;
+        deleteFlow_mem(q, nLevels);
+        return 0;
+    }
+
+    delete[] ImageIn0;
+    delete[] ImageIn1;
+    delete[] Vx;
+    delete[] Vy;
+    deleteFlow_mem(q, nLevels);
+    return 0;
+}
+
+
+int main(int argc, char** argv)
+{
+    const char* keys =
+        "{ help h ?    |          | print help message }"
+        "{ video  v    |          | use video as input }"
+        "{ show   s    |   true   | show user interface }";
+
+    CommandLineParser cmd(argc, argv, keys);
+    if (cmd.has("help"))
+    {
+        cmd.printMessage();
+        return EXIT_SUCCESS;
+    }
+
+    try
+    {
+        App app(cmd);
+        if (!cmd.check())
+        {
+            cmd.printErrors();
+            return EXIT_FAILURE;
+        }
+        app.run();
+    }
+    catch (const cv::Exception& e)
+    {
+        std::cout << "FATAL: OpenCV error: " << e.what() << std::endl;
+        return EXIT_SUCCESS;
+    }
+    catch (const std::exception& e)
+    {
+        std::cout << "FATAL: C++ error: " << e.what() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    catch (...)
+    {
+        std::cout << "FATAL: unknown C++ exception" << std::endl;
+        return EXIT_SUCCESS;
+    }
+
+    return EXIT_SUCCESS;
+} // main()

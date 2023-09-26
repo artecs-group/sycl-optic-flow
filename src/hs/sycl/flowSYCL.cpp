@@ -27,15 +27,72 @@
 
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
-#include "common.h"
+#include "common.hpp"
 
 // include kernels
-#include "downscaleKernel.dp.hpp"
-#include "upscaleKernel.dp.hpp"
-#include "warpingKernel.dp.hpp"
-#include "derivativesKernel.dp.hpp"
-#include "solverKernel.dp.hpp"
-#include "addKernel.dp.hpp"
+#include "kernels/downscaleKernel.hpp"
+#include "kernels/upscaleKernel.hpp"
+#include "kernels/warpingKernel.hpp"
+#include "kernels/derivativesKernel.hpp"
+#include "kernels/solverKernel.hpp"
+#include "kernels/addKernel.hpp"
+
+const float **pI0, **pI1;
+int *pW, *pS, *pH;
+
+// device memory pointers
+float *d_tmp;
+float *d_du0;
+float *d_dv0;
+float *d_du1;
+float *d_dv1;
+
+float *d_Ix;
+float *d_Iy;
+float *d_Iz;
+
+float *d_u;
+float *d_v;
+float *d_nu;
+float *d_nv;
+
+float *pI0_h, *I0_h, *pI1_h, *I1_h, *src_d0, *src_d1;
+
+
+void initFlow(sycl::queue q, int nLevels, int stride, int width, int height) {
+    // pI0 and pI1 will hold device pointers
+    pI0 = new const float *[nLevels];
+    pI1 = new const float *[nLevels];
+
+    pW = new int[nLevels];
+    pH = new int[nLevels];
+    pS = new int[nLevels];
+
+    const int dataSize = stride * height * sizeof(float);
+    const int currentLevel = nLevels - 1;
+
+    d_tmp = (float *)sycl::malloc_device(dataSize, q);
+    d_du0 = (float *)sycl::malloc_device(dataSize, q);
+    d_dv0 = (float *)sycl::malloc_device(dataSize, q);
+    d_du1 = (float *)sycl::malloc_device(dataSize, q);
+    d_dv1 = (float *)sycl::malloc_device(dataSize, q);
+    d_Ix = (float *)sycl::malloc_device(dataSize, q);
+    d_Iy = (float *)sycl::malloc_device(dataSize, q);
+    d_Iz = (float *)sycl::malloc_device(dataSize, q);
+    d_u = (float *)sycl::malloc_device(dataSize, q);
+    d_v = (float *)sycl::malloc_device(dataSize, q);
+    d_nu = (float *)sycl::malloc_device(dataSize, q);
+    d_nv = (float *)sycl::malloc_device(dataSize, q);
+    *(pI0 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
+    *(pI1 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
+    pI0_h = (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
+    I0_h = (float *)sycl::malloc_host(dataSize, q);
+    pI1_h = (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
+    I1_h = (float *)sycl::malloc_host(dataSize, q);
+    src_d0 = (float *)sycl::malloc_device(stride * height * sizeof(sycl::float4), q);
+    src_d1 = (float *)sycl::malloc_device(stride * height * sizeof(sycl::float4), q);
+}
+
 
 ///////////////////////////////////////////////////////////////////////////////
 /// \brief method logic
@@ -53,231 +110,137 @@
 /// \param[out] u            horizontal displacement
 /// \param[out] v            vertical displacement
 ///////////////////////////////////////////////////////////////////////////////
-void ComputeFlowCUDA(const float *I0, const float *I1, int width, int height,
+void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int height,
                      int stride, float alpha, int nLevels, int nWarpIters,
-                     int nSolverIters, float *u, float *v) {
-  printf("Computing optical flow on Device...\n");
+                     int nSolverIters, float *u, float *v) 
+{
+    const int dataSize = stride * height * sizeof(float);
+    // prepare pyramid
+    int currentLevel = nLevels - 1;
 
-  sycl::queue q{aspect_selector(sycl::aspect::image), sycl::property::queue::in_order()};
+    q.memcpy((void *)I0_h, I0, dataSize);
+    q.memcpy((void *)I1_h, I1, dataSize);
+    q.memcpy((void *)pI0[currentLevel], I0, dataSize);
+    q.memcpy((void *)pI1[currentLevel], I1, dataSize);
+    q.wait();
 
-  std::cout << "\nRunning on "
-            << q.get_device().get_info<sycl::info::device::name>() << "\n";
-  // pI0 and pI1 will hold device pointers
-  const float **pI0 = new const float *[nLevels];
-  const float **pI1 = new const float *[nLevels];
+    pW[currentLevel] = width;
+    pH[currentLevel] = height;
+    pS[currentLevel] = stride;
 
-  int *pW = new int[nLevels];
-  int *pH = new int[nLevels];
-  int *pS = new int[nLevels];
+    for (; currentLevel > 0; --currentLevel) {
+        int nw = pW[currentLevel] / 2;
+        int nh = pH[currentLevel] / 2;
+        int ns = iAlignUp(nw);
 
-  // device memory pointers
-  float *d_tmp;
-  float *d_du0;
-  float *d_dv0;
-  float *d_du1;
-  float *d_dv1;
+        checkCudaErrors(DPCT_CHECK_ERROR(
+            *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(
+                ns * nh * sizeof(float), q)));
+        checkCudaErrors(DPCT_CHECK_ERROR(
+            *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(
+                ns * nh * sizeof(float), q)));
 
-  float *d_Ix;
-  float *d_Iy;
-  float *d_Iz;
+        Downscale(pI0[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
+                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
+                    (float *)pI0[currentLevel - 1], q);
 
-  float *d_u;
-  float *d_v;
-  float *d_nu;
-  float *d_nv;
-
-  const int dataSize = stride * height * sizeof(float);
-
-  checkCudaErrors(DPCT_CHECK_ERROR(d_tmp = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_du0 = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_dv0 = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_du1 = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_dv1 = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-
-  checkCudaErrors(DPCT_CHECK_ERROR(d_Ix = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_Iy = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_Iz = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-
-  checkCudaErrors(DPCT_CHECK_ERROR(
-      d_u = (float *)sycl::malloc_device(dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(
-      d_v = (float *)sycl::malloc_device(dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_nu = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(d_nv = (float *)sycl::malloc_device(
-                                       dataSize, q)));
-
-  // prepare pyramid
-
-  int currentLevel = nLevels - 1;
-  // allocate GPU memory for input images
-  checkCudaErrors(DPCT_CHECK_ERROR(
-      *(pI0 + currentLevel) = (const float *)sycl::malloc_device(
-          dataSize, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(
-      *(pI1 + currentLevel) = (const float *)sycl::malloc_device(
-          dataSize, q)));
-
-  float *pI0_h =
-      (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
-  float *I0_h = (float *)sycl::malloc_host(dataSize, q);
-
-  float *pI1_h =
-      (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
-  float *I1_h = (float *)sycl::malloc_host(dataSize, q);
-
-  float *src_d0 =
-      (float *)sycl::malloc_device(stride * height * sizeof(sycl::float4), q);
-  float *src_d1 =
-      (float *)sycl::malloc_device(stride * height * sizeof(sycl::float4), q);
-
-  q.memcpy((void *)I0_h, I0, dataSize);
-  q.memcpy((void *)I1_h, I1, dataSize);
-
-  q.memcpy((void *)pI0[currentLevel], I0, dataSize);
-  q.memcpy((void *)pI1[currentLevel], I1, dataSize);
-
-  q.wait();
-
-  pW[currentLevel] = width;
-  pH[currentLevel] = height;
-  pS[currentLevel] = stride;
-
-  for (; currentLevel > 0; --currentLevel) {
-    int nw = pW[currentLevel] / 2;
-    int nh = pH[currentLevel] / 2;
-    int ns = iAlignUp(nw);
-
-    checkCudaErrors(DPCT_CHECK_ERROR(
-        *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(
-            ns * nh * sizeof(float), q)));
-    checkCudaErrors(DPCT_CHECK_ERROR(
-        *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(
-            ns * nh * sizeof(float), q)));
-
-    Downscale(pI0[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
-              pH[currentLevel], pS[currentLevel], nw, nh, ns,
-              (float *)pI0[currentLevel - 1], q);
-
-    Downscale(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
-              pH[currentLevel], pS[currentLevel], nw, nh, ns,
-              (float *)pI1[currentLevel - 1], q);
-
-    pW[currentLevel - 1] = nw;
-    pH[currentLevel - 1] = nh;
-    pS[currentLevel - 1] = ns;
-  }
-
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(q.memset(d_u, 0, stride * height * sizeof(float))));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(q.memset(d_v, 0, stride * height * sizeof(float))));
-  checkCudaErrors(
-    DPCT_CHECK_ERROR(q.wait()));
-
-  // compute flow
-  for (; currentLevel < nLevels; ++currentLevel) {
-    for (int warpIter = 0; warpIter < nWarpIters; ++warpIter) {
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_du0, 0, dataSize)));
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_dv0, 0, dataSize)));
-
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_du1, 0, dataSize)));
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_dv1, 0, dataSize)));
-
-      // on current level we compute optical flow
-      // between frame 0 and warped frame 1
-       WarpImage(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel],
-                pS[currentLevel], d_u, d_v, d_tmp, q);
-
-      ComputeDerivatives(pI0[currentLevel], d_tmp, pI0_h, pI1_h, I0_h, I1_h,
-                         src_d0, src_d1, pW[currentLevel],
-                         pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
-
-      for (int iter = 0; iter < nSolverIters; ++iter) {
-        SolveForUpdate(d_du0, d_dv0, d_Ix, d_Iy, d_Iz, pW[currentLevel],
-                       pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
-
-        Swap(d_du0, d_du1);
-        Swap(d_dv0, d_dv1);
-      }
-
-      // update u, v
-      Add(d_u, d_du0, pH[currentLevel] * pS[currentLevel], d_u, q);
-      Add(d_v, d_dv0, pH[currentLevel] * pS[currentLevel], d_v, q);
+        Downscale(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
+                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
+                    (float *)pI1[currentLevel - 1], q);
+        pW[currentLevel - 1] = nw;
+        pH[currentLevel - 1] = nh;
+        pS[currentLevel - 1] = ns;
     }
 
-    if (currentLevel != nLevels - 1) {
-      // prolongate solution
-      float scaleX = (float)pW[currentLevel + 1] / (float)pW[currentLevel];
-
-      Upscale(d_u, pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
-              pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
-              scaleX, d_nu, q);
-
-      float scaleY = (float)pH[currentLevel + 1] / (float)pH[currentLevel];
-
-      Upscale(d_v, pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
-              pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
-              scaleY, d_nv, q);
-
-      Swap(d_u, d_nu);
-      Swap(d_v, d_nv);
-    }
-  }
-
-  checkCudaErrors(DPCT_CHECK_ERROR(
-      q.memcpy(u, d_u, dataSize)));
-  checkCudaErrors(DPCT_CHECK_ERROR(
-      q.memcpy(v, d_v, dataSize)));
-  checkCudaErrors(
+    checkCudaErrors(
+        DPCT_CHECK_ERROR(q.memset(d_u, 0, stride * height * sizeof(float))));
+    checkCudaErrors(
+        DPCT_CHECK_ERROR(q.memset(d_v, 0, stride * height * sizeof(float))));
+    checkCudaErrors(
     DPCT_CHECK_ERROR(q.wait()));
 
-  // cleanup
-  for (int i = 0; i < nLevels; ++i) {
-    checkCudaErrors(DPCT_CHECK_ERROR(
-        sycl::free((void *)pI0[i], q)));
-    checkCudaErrors(DPCT_CHECK_ERROR(
-        sycl::free((void *)pI1[i], q)));
-  }
+    // compute flow
+    for (; currentLevel < nLevels; ++currentLevel) {
+        for (int warpIter = 0; warpIter < nWarpIters; ++warpIter) {
+            checkCudaErrors(DPCT_CHECK_ERROR(
+                q.memset(d_du0, 0, dataSize)));
+            checkCudaErrors(DPCT_CHECK_ERROR(
+                q.memset(d_dv0, 0, dataSize)));
 
-  delete[] pI0;
-  delete[] pI1;
-  delete[] pW;
-  delete[] pH;
-  delete[] pS;
+            checkCudaErrors(DPCT_CHECK_ERROR(
+                q.memset(d_du1, 0, dataSize)));
+            checkCudaErrors(DPCT_CHECK_ERROR(
+                q.memset(d_dv1, 0, dataSize)));
 
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_tmp, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_du0, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_dv0, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_du1, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_dv1, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_Ix, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_Iy, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_Iz, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_nu, q)));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(sycl::free(d_nv, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(sycl::free(d_u, q)));
-  checkCudaErrors(DPCT_CHECK_ERROR(sycl::free(d_v, q)));
+            // on current level we compute optical flow
+            // between frame 0 and warped frame 1
+            WarpImage(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel],
+                    pS[currentLevel], d_u, d_v, d_tmp, q);
+
+            ComputeDerivatives(pI0[currentLevel], d_tmp, pI0_h, pI1_h, I0_h, I1_h,
+                                src_d0, src_d1, pW[currentLevel],
+                                pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
+
+            for (int iter = 0; iter < nSolverIters; ++iter) {
+                SolveForUpdate(d_du0, d_dv0, d_Ix, d_Iy, d_Iz, pW[currentLevel],
+                            pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
+
+                Swap(d_du0, d_du1);
+                Swap(d_dv0, d_dv1);
+            }
+
+            // update u, v
+            Add(d_u, d_du0, pH[currentLevel] * pS[currentLevel], d_u, q);
+            Add(d_v, d_dv0, pH[currentLevel] * pS[currentLevel], d_v, q);
+        }
+
+        if (currentLevel != nLevels - 1) {
+            // prolongate solution
+            float scaleX = (float)pW[currentLevel + 1] / (float)pW[currentLevel];
+
+            Upscale(d_u, pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
+                    pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
+                    scaleX, d_nu, q);
+
+            float scaleY = (float)pH[currentLevel + 1] / (float)pH[currentLevel];
+
+            Upscale(d_v, pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
+                    pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
+                    scaleY, d_nv, q);
+
+            Swap(d_u, d_nu);
+            Swap(d_v, d_nv);
+        }
+    }
+
+    q.memcpy(u, d_u, dataSize);
+    q.memcpy(v, d_v, dataSize);
+    q.wait();
+}
+
+
+void deleteFlow_mem(sycl::queue q, int nLevels) {
+    for (int i = 0; i < nLevels; ++i) {
+        sycl::free((void *)pI0[i], q);
+        sycl::free((void *)pI1[i], q);
+    }
+
+    delete[] pI0;
+    delete[] pI1;
+    delete[] pW;
+    delete[] pH;
+    delete[] pS;
+
+    sycl::free(d_tmp, q);
+    sycl::free(d_du0, q);
+    sycl::free(d_dv0, q);
+    sycl::free(d_du1, q);
+    sycl::free(d_dv1, q);
+    sycl::free(d_Ix, q);
+    sycl::free(d_Iy, q);
+    sycl::free(d_Iz, q);
+    sycl::free(d_nu, q);
+    sycl::free(d_nv, q);
+    sycl::free(d_u, q);
+    sycl::free(d_v, q);
 }

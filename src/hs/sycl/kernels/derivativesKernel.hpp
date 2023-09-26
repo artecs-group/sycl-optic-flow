@@ -57,53 +57,54 @@ void ComputeDerivativesKernel(int width, int height, int stride, float *Ix,
 
   const int pos = ix + iy * stride;
 
-  if (ix >= width || iy >= height) return;
+  if (ix < width && iy < height) { 
 
-  float t0, t1;
+    float t0, t1;
 
-  auto x_inputCoords1 = sycl::float2(ix - 2.0f, iy);
-  auto x_inputCoords2 = sycl::float2(ix - 1.0f, iy);
-  auto x_inputCoords3 = sycl::float2(ix + 1.0f, iy);
-  auto x_inputCoords4 = sycl::float2(ix + 2.0f, iy);
+    auto x_inputCoords1 = sycl::float2(ix - 2.0f, iy);
+    auto x_inputCoords2 = sycl::float2(ix - 1.0f, iy);
+    auto x_inputCoords3 = sycl::float2(ix + 1.0f, iy);
+    auto x_inputCoords4 = sycl::float2(ix + 2.0f, iy);
 
-  t0 = texSource.read(x_inputCoords1, texDesc)[0];
-  t0 -= texSource.read(x_inputCoords2, texDesc)[0] * 8.0f;
-  t0 += texSource.read(x_inputCoords3, texDesc)[0] * 8.0f;
-  t0 -= texSource.read(x_inputCoords4, texDesc)[0];
-  t0 /= 12.0f;
+    t0 = texSource.read(x_inputCoords1, texDesc)[0];
+    t0 -= texSource.read(x_inputCoords2, texDesc)[0] * 8.0f;
+    t0 += texSource.read(x_inputCoords3, texDesc)[0] * 8.0f;
+    t0 -= texSource.read(x_inputCoords4, texDesc)[0];
+    t0 /= 12.0f;
 
-  t1 = texTarget.read(x_inputCoords1, texDesc)[0];
-  t1 -= texTarget.read(x_inputCoords2, texDesc)[0] * 8.0f;
-  t1 += texTarget.read(x_inputCoords3, texDesc)[0] * 8.0f;
-  t1 -= texTarget.read(x_inputCoords4, texDesc)[0];
-  t1 /= 12.0f;
+    t1 = texTarget.read(x_inputCoords1, texDesc)[0];
+    t1 -= texTarget.read(x_inputCoords2, texDesc)[0] * 8.0f;
+    t1 += texTarget.read(x_inputCoords3, texDesc)[0] * 8.0f;
+    t1 -= texTarget.read(x_inputCoords4, texDesc)[0];
+    t1 /= 12.0f;
 
-  Ix[pos] = (t0 + t1) * 0.5f;
+    Ix[pos] = (t0 + t1) * 0.5f;
 
-  // t derivative
-  auto inputCoord = sycl::float2(ix, iy);
-  Iz[pos] = texTarget.read(inputCoord, texDesc)[0] -
-            texSource.read(inputCoord, texDesc)[0];
+    // t derivative
+    auto inputCoord = sycl::float2(ix, iy);
+    Iz[pos] = texTarget.read(inputCoord, texDesc)[0] -
+              texSource.read(inputCoord, texDesc)[0];
 
-  // y derivative
-  auto y_inputCoords1 = sycl::float2(ix, iy - 2.0f);
-  auto y_inputCoords2 = sycl::float2(ix, iy - 1.0f);
-  auto y_inputCoords3 = sycl::float2(ix, iy + 1.0f);
-  auto y_inputCoords4 = sycl::float2(ix, iy + 2.0f);
+    // y derivative
+    auto y_inputCoords1 = sycl::float2(ix, iy - 2.0f);
+    auto y_inputCoords2 = sycl::float2(ix, iy - 1.0f);
+    auto y_inputCoords3 = sycl::float2(ix, iy + 1.0f);
+    auto y_inputCoords4 = sycl::float2(ix, iy + 2.0f);
 
-  t0 = texSource.read(y_inputCoords1, texDesc)[0];
-  t0 -= texSource.read(y_inputCoords2, texDesc)[0] * 8.0f;
-  t0 += texSource.read(y_inputCoords3, texDesc)[0] * 8.0f;
-  t0 -= texSource.read(y_inputCoords4, texDesc)[0];
-  t0 /= 12.0f;
+    t0 = texSource.read(y_inputCoords1, texDesc)[0];
+    t0 -= texSource.read(y_inputCoords2, texDesc)[0] * 8.0f;
+    t0 += texSource.read(y_inputCoords3, texDesc)[0] * 8.0f;
+    t0 -= texSource.read(y_inputCoords4, texDesc)[0];
+    t0 /= 12.0f;
 
-  t1 = texTarget.read(y_inputCoords1, texDesc)[0];
-  t1 -= texTarget.read(y_inputCoords2, texDesc)[0] * 8.0f;
-  t1 += texTarget.read(y_inputCoords3, texDesc)[0] * 8.0f;
-  t1 -= texTarget.read(y_inputCoords4, texDesc)[0];
-  t1 /= 12.0f;
+    t1 = texTarget.read(y_inputCoords1, texDesc)[0];
+    t1 -= texTarget.read(y_inputCoords2, texDesc)[0] * 8.0f;
+    t1 += texTarget.read(y_inputCoords3, texDesc)[0] * 8.0f;
+    t1 -= texTarget.read(y_inputCoords4, texDesc)[0];
+    t1 /= 12.0f;
 
-  Iy[pos] = (t0 + t1) * 0.5f;
+    Iy[pos] = (t0 + t1) * 0.5f;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

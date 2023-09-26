@@ -43,9 +43,8 @@ void AddKernel(const float *op1, const float *op2, int count,
   const int pos = item_ct1.get_local_id(2) +
                   item_ct1.get_group(2) * item_ct1.get_local_range(2);
 
-  if (pos >= count) return;
-
-  sum[pos] = op1[pos] + op2[pos];
+  if (pos < count)
+    sum[pos] = op1[pos] + op2[pos];
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -52,14 +52,15 @@ void WarpingKernel(int width, int height, int stride, const float *u,
 
   const int pos = ix + iy * stride;
 
-  if (ix >= width || iy >= height) return;
+  if (ix < width && iy < height) {
 
-  float x = ((float)ix + u[pos]);
-  float y = ((float)iy + v[pos]);
+    float x = ((float)ix + u[pos]);
+    float y = ((float)iy + v[pos]);
 
-  auto inputCoord = sycl::float2(x, y);
+    auto inputCoord = sycl::float2(x, y);
 
-  out[pos] = texToWarp.read(inputCoord, texDesc)[0];
+    out[pos] = texToWarp.read(inputCoord, texDesc)[0];
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

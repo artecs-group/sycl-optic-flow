@@ -147,23 +147,24 @@ void JacobiIteration(const float *du0, const float *dv0,
   */
   item_ct1.barrier();
 
-  if (ix >= w || iy >= h) return;
+  if (ix < w && iy < h) {
 
-  // now all necessary data are loaded to shared memory
-  int left, right, up, down;
-  left = shMemPos - 1;
-  right = shMemPos + 1;
-  up = shMemPos + bx + 2;
-  down = shMemPos - bx - 2;
+    // now all necessary data are loaded to shared memory
+    int left, right, up, down;
+    left = shMemPos - 1;
+    right = shMemPos + 1;
+    up = shMemPos + bx + 2;
+    down = shMemPos - bx - 2;
 
-  float sumU = (du[left] + du[right] + du[up] + du[down]) * 0.25f;
-  float sumV = (dv[left] + dv[right] + dv[up] + dv[down]) * 0.25f;
+    float sumU = (du[left] + du[right] + du[up] + du[down]) * 0.25f;
+    float sumV = (dv[left] + dv[right] + dv[up] + dv[down]) * 0.25f;
 
-  float frac = (Ix[pos] * sumU + Iy[pos] * sumV + Iz[pos]) /
-               (Ix[pos] * Ix[pos] + Iy[pos] * Iy[pos] + alpha);
+    float frac = (Ix[pos] * sumU + Iy[pos] * sumV + Iz[pos]) /
+                (Ix[pos] * Ix[pos] + Iy[pos] * Iy[pos] + alpha);
 
-  du1[pos] = sumU - Ix[pos] * frac;
-  dv1[pos] = sumV - Iy[pos] * frac;
+    du1[pos] = sumU - Ix[pos] * frac;
+    dv1[pos] = sumV - Iy[pos] * frac;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

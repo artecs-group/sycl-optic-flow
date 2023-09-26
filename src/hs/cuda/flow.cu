@@ -23,25 +23,36 @@
 #include "kernels/solverKernel.cuh"
 #include "kernels/addKernel.cuh"
 
-    // device memory pointers
-    float *d_tmp;
-    float *d_du0;
-    float *d_dv0;
-    float *d_du1;
-    float *d_dv1;
+int *pW, *pH, *pS;
+const float **pI0, **pI1;
 
-    float *d_Ix;
-    float *d_Iy;
-    float *d_Iz;
+// device memory pointers
+float *d_tmp;
+float *d_du0;
+float *d_dv0;
+float *d_du1;
+float *d_dv1;
 
-    float *d_u;
-    float *d_v;
-    float *d_nu;
-    float *d_nv;
+float *d_Ix;
+float *d_Iy;
+float *d_Iz;
+
+float *d_u;
+float *d_v;
+float *d_nu;
+float *d_nv;
 
 void initFlow(int nLevels, int stride, int width, int height)
 {
     const int dataSize = stride * height * sizeof(float);
+    const int currentLevel = nLevels - 1;
+
+    pW = new int [nLevels];
+    pH = new int [nLevels];
+    pS = new int [nLevels];
+    // pI0 and pI1 will hold device pointers
+    pI0 = new const float *[nLevels];
+    pI1 = new const float *[nLevels];
 
     checkCudaErrors(cudaMalloc(&d_tmp, dataSize));
     checkCudaErrors(cudaMalloc(&d_du0, dataSize));
@@ -57,10 +68,19 @@ void initFlow(int nLevels, int stride, int width, int height)
     checkCudaErrors(cudaMalloc(&d_v , dataSize));
     checkCudaErrors(cudaMalloc(&d_nu, dataSize));
     checkCudaErrors(cudaMalloc(&d_nv, dataSize));
+
+    checkCudaErrors(cudaMalloc(pI0 + currentLevel, dataSize));
+    checkCudaErrors(cudaMalloc(pI1 + currentLevel, dataSize));
 }
 
 void deleteFlow_mem(int nLevels)
 {
+    delete [] pI0;
+    delete [] pI1;
+    delete [] pW;
+    delete [] pH;
+    delete [] pS;
+
     checkCudaErrors(cudaFree(d_tmp));
     checkCudaErrors(cudaFree(d_du0));
     checkCudaErrors(cudaFree(d_dv0));
@@ -73,6 +93,9 @@ void deleteFlow_mem(int nLevels)
     checkCudaErrors(cudaFree(d_nv));
     checkCudaErrors(cudaFree(d_u));
     checkCudaErrors(cudaFree(d_v));
+
+    checkCudaErrors(cudaFree(pI0));
+    checkCudaErrors(cudaFree(pI1));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,22 +124,10 @@ void ComputeFlow(const float *I0,
                      float *u,
                      float *v)
 {
-    int *pW = new int [nLevels];
-    int *pH = new int [nLevels];
-    int *pS = new int [nLevels];
-
-    // pI0 and pI1 will hold device pointers
-    const float **pI0 = new const float *[nLevels];
-    const float **pI1 = new const float *[nLevels];
-
     const int dataSize = stride * height * sizeof(float);
 
     // prepare pyramid
     int currentLevel = nLevels - 1;
-
-    // allocate GPU memory for input images
-    checkCudaErrors(cudaMalloc(pI0 + currentLevel, dataSize));
-    checkCudaErrors(cudaMalloc(pI1 + currentLevel, dataSize));
 
     checkCudaErrors(cudaMemcpy((void *)pI0[currentLevel], I0, dataSize, cudaMemcpyHostToDevice));
     checkCudaErrors(cudaMemcpy((void *)pI1[currentLevel], I1, dataSize, cudaMemcpyHostToDevice));
@@ -210,11 +221,4 @@ void ComputeFlow(const float *I0,
         checkCudaErrors(cudaFree((void *)pI0[i]));
         checkCudaErrors(cudaFree((void *)pI1[i]));
     }
-
-    delete [] pI0;
-    delete [] pI1;
-
-    delete [] pW;
-    delete [] pH;
-    delete [] pS;
 }

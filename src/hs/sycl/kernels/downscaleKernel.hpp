@@ -113,6 +113,5 @@ static void Downscale(const float *src, float *pI0_h, float *I0_h, float *src_p,
                        DownscaleKernel(newWidth, newHeight, newStride, out,
                                        tex_acc, texDescr, item_ct1);
                      });
-  }).wait();
-  std::cout << "kk" << std::endl;
+  });
 }

@@ -26,7 +26,6 @@
  */
 
 #include <sycl/sycl.hpp>
-#include <dpct/dpct.hpp>
 #include "common.hpp"
 
 // include kernels
@@ -130,57 +129,47 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
     pH[currentLevel] = height;
     pS[currentLevel] = stride;
 
-  for (; currentLevel > 0; --currentLevel) {
-    int nw = pW[currentLevel] / 2;
-    int nh = pH[currentLevel] / 2;
-    int ns = iAlignUp(nw);
+    for (; currentLevel > 0; --currentLevel) {
+        int nw = pW[currentLevel] / 2;
+        int nh = pH[currentLevel] / 2;
+        int ns = iAlignUp(nw);
 
-    checkCudaErrors(DPCT_CHECK_ERROR(
-        *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(
-            ns * nh * sizeof(float), q)));
-    checkCudaErrors(DPCT_CHECK_ERROR(
-        *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(
-            ns * nh * sizeof(float), q)));
+        *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(ns * nh * sizeof(float), q);
+        *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(ns * nh * sizeof(float), q);
 
-    Downscale(pI0[currentLevel], pW[currentLevel],
-              pH[currentLevel], pS[currentLevel], nw, nh, ns,
-              (float *)pI0[currentLevel - 1], q);
+        Downscale(pI0[currentLevel], pW[currentLevel],
+                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
+                    (float *)pI0[currentLevel - 1], q);
 
-    Downscale(pI1[currentLevel], pW[currentLevel],
-              pH[currentLevel], pS[currentLevel], nw, nh, ns,
-              (float *)pI1[currentLevel - 1], q);
+        Downscale(pI1[currentLevel], pW[currentLevel],
+                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
+                    (float *)pI1[currentLevel - 1], q);
 
-    pW[currentLevel - 1] = nw;
-    pH[currentLevel - 1] = nh;
-    pS[currentLevel - 1] = ns;
-  }
+        pW[currentLevel - 1] = nw;
+        pH[currentLevel - 1] = nh;
+        pS[currentLevel - 1] = ns;
+    }
 
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(q.memset(d_u, 0, stride * height * sizeof(float))));
-  checkCudaErrors(
-      DPCT_CHECK_ERROR(q.memset(d_v, 0, stride * height * sizeof(float))));
-  checkCudaErrors(
-    DPCT_CHECK_ERROR(q.wait()));
+  q.memset(d_u, 0, stride * height * sizeof(float));
+  q.memset(d_v, 0, stride * height * sizeof(float));
+  q.wait();
 
   // compute flow
   for (; currentLevel < nLevels; ++currentLevel) {
     for (int warpIter = 0; warpIter < nWarpIters; ++warpIter) {
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_du0, 0, dataSize)));
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_dv0, 0, dataSize)));
-
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_du1, 0, dataSize)));
-      checkCudaErrors(DPCT_CHECK_ERROR(
-          q.memset(d_dv1, 0, dataSize)));
+          q.memset(d_du0, 0, dataSize);
+          q.memset(d_dv0, 0, dataSize);
+          q.memset(d_du1, 0, dataSize);
+          q.memset(d_dv1, 0, dataSize);
 
       // on current level we compute optical flow
       // between frame 0 and warped frame 1
        WarpImage(pI1[currentLevel], pW[currentLevel], pH[currentLevel],
                 pS[currentLevel], d_u, d_v, d_tmp, q);
 
-      ComputeDerivatives(pI0[currentLevel], d_tmp, pW[currentLevel],
+
+      ComputeDerivatives(pI0[currentLevel], d_tmp,
+                         pW[currentLevel],
                          pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
 
       for (int iter = 0; iter < nSolverIters; ++iter) {

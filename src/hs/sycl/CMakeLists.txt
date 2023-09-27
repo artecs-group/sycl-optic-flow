@@ -8,8 +8,6 @@ set(This hs)
 set(Headers
     flowSYCL.hpp
     common.hpp
-    helper_cuda.hpp
-    helper_string.hpp
     kernels/addKernel.hpp
     kernels/derivativesKernel.hpp
     kernels/downscaleKernel.hpp

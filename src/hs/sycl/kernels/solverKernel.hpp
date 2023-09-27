@@ -26,7 +26,6 @@
  */
 
 #include <sycl/sycl.hpp>
-#include <dpct/dpct.hpp>
 #include "../common.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -87,12 +86,9 @@ void JacobiIteration(const float *du0, const float *dv0,
     // gm - global memory
     // sm - shared memory
     int gmPos, smPos;
+    int auxLeft = (bsx + item_ct1.get_local_id(2));
 
-    /*
-    DPCT1064:30: Migrated min call is used in a macro/template definition and
-    may not be valid for all macro/template uses. Adjust the code.
-    */
-    x = dpct::min((unsigned int)(bsx + item_ct1.get_local_id(2)), w - 1);
+    x = sycl::min(auxLeft, w - 1);
     // row just below the tile
     y = sycl::max(bsy - 1, 0);
     gmPos = y * s + x;
@@ -116,12 +112,9 @@ void JacobiIteration(const float *du0, const float *dv0,
     // gm - global memory
     // sm - shared memory
     int gmPos, smPos;
+    int auxLeft = (bsy + item_ct1.get_local_id(2));
 
-    /*
-    DPCT1064:31: Migrated min call is used in a macro/template definition and
-    may not be valid for all macro/template uses. Adjust the code.
-    */
-    y = dpct::min((unsigned int)(bsy + item_ct1.get_local_id(2)), h - 1);
+    y = sycl::min(auxLeft, h - 1);
     // column to the left
     x = sycl::max(bsx - 1, 0);
     smPos = bx + 2 + item_ct1.get_local_id(2) * (bx + 2);

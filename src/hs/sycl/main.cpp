@@ -147,7 +147,7 @@ int App::run() {
     constexpr int nLevels{5};
 
     // number of solver iterations on each level
-    constexpr int nSolverIters{500};
+    constexpr int nSolverIters{100};
 
     // number of warping iterations
     constexpr int nWarpIters{3};

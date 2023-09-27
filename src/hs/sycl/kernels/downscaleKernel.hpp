@@ -49,20 +49,21 @@ void DownscaleKernel(int width, int height, int stride, float *out,
   const int iy = item_ct1.get_local_id(1) +
                  item_ct1.get_group(1) * item_ct1.get_local_range(1);
 
-  if (ix < width && iy < height) {
-    int srcx = ix * 2;
-    int srcy = iy * 2;
+  if (ix >= width || iy >= height)
+    return;
 
-    auto inputCoords1 = sycl::float2(srcx + 0, srcy + 0);
-    auto inputCoords2 = sycl::float2(srcx + 0, srcy + 1);
-    auto inputCoords3 = sycl::float2(srcx + 1, srcy + 0);
-    auto inputCoords4 = sycl::float2(srcx + 1, srcy + 1);
+  int srcx = ix * 2;
+  int srcy = iy * 2;
 
-    out[ix + iy * stride] = 0.25f * (tex_acc.read(inputCoords1, texDesc)[0] +
-                                    tex_acc.read(inputCoords2, texDesc)[0] +
-                                    tex_acc.read(inputCoords3, texDesc)[0] +
-                                    tex_acc.read(inputCoords4, texDesc)[0]);
-  }
+  auto inputCoords1 = sycl::float2(srcx + 0, srcy + 0);
+  auto inputCoords2 = sycl::float2(srcx + 0, srcy + 1);
+  auto inputCoords3 = sycl::float2(srcx + 1, srcy + 0);
+  auto inputCoords4 = sycl::float2(srcx + 1, srcy + 1);
+
+  out[ix + iy * stride] = 0.25f * (tex_acc.read(inputCoords1, texDesc)[0] +
+                                   tex_acc.read(inputCoords2, texDesc)[0] +
+                                   tex_acc.read(inputCoords3, texDesc)[0] +
+                                   tex_acc.read(inputCoords4, texDesc)[0]);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

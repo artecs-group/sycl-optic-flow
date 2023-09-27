@@ -48,16 +48,16 @@ void UpscaleKernel(int width, int height, int stride, float scale, float *out,
   const int iy = item_ct1.get_local_id(1) +
                  item_ct1.get_group(1) * item_ct1.get_local_range(1);
 
-  if (ix < width && iy < height) {
-    float x = ((float)ix - 0.5f) * 0.5f;
-    float y = ((float)iy - 0.5f) * 0.5f;
+  if (ix >= width || iy >= height) return;
 
-    auto inputCoord = sycl::float2(x, y);
+  float x = ((float)ix - 0.5f) * 0.5f;
+  float y = ((float)iy - 0.5f) * 0.5f;
 
-    // exploit hardware interpolation
-    // and scale interpolated vector to match next pyramid level resolution
-    out[ix + iy * stride] = texCoarse_acc.read(inputCoord, texDesc)[0] * scale;
-  }
+  auto inputCoord = sycl::float2(x, y);
+
+  // exploit hardware interpolation
+  // and scale interpolated vector to match next pyramid level resolution
+  out[ix + iy * stride] = texCoarse_acc.read(inputCoord, texDesc)[0] * scale;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

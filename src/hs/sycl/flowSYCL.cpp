@@ -83,8 +83,10 @@ void initFlow(sycl::queue q, int nLevels, int stride, int width, int height) {
     d_v = (float *)sycl::malloc_device(dataSize, q);
     d_nu = (float *)sycl::malloc_device(dataSize, q);
     d_nv = (float *)sycl::malloc_device(dataSize, q);
+
     *(pI0 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
     *(pI1 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
+
     pI0_h = (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
     I0_h = (float *)sycl::malloc_host(dataSize, q);
     pI1_h = (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
@@ -147,19 +149,20 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
         Downscale(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
                     pH[currentLevel], pS[currentLevel], nw, nh, ns,
                     (float *)pI1[currentLevel - 1], q);
+
         pW[currentLevel - 1] = nw;
         pH[currentLevel - 1] = nh;
         pS[currentLevel - 1] = ns;
     }
 
-    checkCudaErrors(
-        DPCT_CHECK_ERROR(q.memset(d_u, 0, stride * height * sizeof(float))));
-    checkCudaErrors(
-        DPCT_CHECK_ERROR(q.memset(d_v, 0, stride * height * sizeof(float))));
-    checkCudaErrors(
+  checkCudaErrors(
+      DPCT_CHECK_ERROR(q.memset(d_u, 0, stride * height * sizeof(float))));
+  checkCudaErrors(
+      DPCT_CHECK_ERROR(q.memset(d_v, 0, stride * height * sizeof(float))));
+  checkCudaErrors(
     DPCT_CHECK_ERROR(q.wait()));
 
-    // compute flow
+  // compute flow
     for (; currentLevel < nLevels; ++currentLevel) {
         for (int warpIter = 0; warpIter < nWarpIters; ++warpIter) {
             checkCudaErrors(DPCT_CHECK_ERROR(
@@ -183,7 +186,7 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
 
             for (int iter = 0; iter < nSolverIters; ++iter) {
                 SolveForUpdate(d_du0, d_dv0, d_Ix, d_Iy, d_Iz, pW[currentLevel],
-                            pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
+                                pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
 
                 Swap(d_du0, d_du1);
                 Swap(d_dv0, d_dv1);
@@ -243,4 +246,10 @@ void deleteFlow_mem(sycl::queue q, int nLevels) {
     sycl::free(d_nv, q);
     sycl::free(d_u, q);
     sycl::free(d_v, q);
+    sycl::free(pI0_h, q);
+    sycl::free(I0_h, q);
+    sycl::free(pI1_h, q);
+    sycl::free(I1_h, q);
+    sycl::free(src_d0, q);
+    sycl::free(src_d1, q);
 }

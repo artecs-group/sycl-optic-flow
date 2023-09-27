@@ -27,11 +27,13 @@ set(EXTRA_FLAGS "")
 
 if(DEBUG)
     message(STATUS "Added -g to compilation.")
-    set(EXTRA_FLAGS "-g")
+    set(EXTRA_FLAGS "-g" "-O0")
+else()
+    set(EXTRA_FLAGS "-O3")
 endif()
 
 find_package(OpenCV REQUIRED)
-set(CXXFLAGS "-O3" "-fsycl" ${EXTRA_FLAGS})
+set(CXXFLAGS "-fsycl" ${EXTRA_FLAGS})
 
 if(NGPU)
     #list(APPEND CXXFLAGS "-fsycl-targets=nvptx64-nvidia-cuda,nvidia_gpu_sm_53,nvidia_gpu_sm_61,nvidia_gpu_sm_87")

@@ -158,9 +158,8 @@ int App::run() {
     // Allocate mem in GPU
     initFlow(q, nLevels, stride, width, height);
 
-    float* ImageIn0 = new float [width*height];
-    float* ImageIn1 = new float [width*height];
-    float *Im0, *Im1;
+    float* ImageIn0 = new float [width*height]{0.0f};
+    float* ImageIn1 = new float [width*height]{0.0f};
 
     float* Vx = new float [width*height];
     float* Vy = new float [width*height];
@@ -181,16 +180,8 @@ int App::run() {
             cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-                if(processedFrames%2){
-                    transformImage_uchar2float(m_frameGray.data, ImageIn1, width, height);
-                    Im0 = ImageIn1;
-                    Im1 = ImageIn0;
-                } else {
-                    transformImage_uchar2float(m_frameGray.data, ImageIn0, width, height);
-                    Im0 = ImageIn0;
-                    Im1 = ImageIn1;
-                }
-                ComputeFlow(q, Im0, Im1, width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
+                transformImage_uchar2float(m_frameGray.data, ImageIn1, width, height);
+                ComputeFlow(q, ImageIn0, ImageIn1, width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
             }
             timer.stop();
             fps += 1000 / timer.getTimeMilli();
@@ -240,6 +231,7 @@ int App::run() {
             }
 
             processedFrames++;
+            memcpy(ImageIn0, ImageIn1, width*height * sizeof(float));            
 
             if (!m_show_ui && (processedFrames > 100)) 
                 m_running = false;

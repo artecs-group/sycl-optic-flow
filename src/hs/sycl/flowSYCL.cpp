@@ -86,12 +86,10 @@ void initFlow(sycl::queue q, int nLevels, int stride, int width, int height) {
     *(pI0 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
     *(pI1 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
 
-    pI0_h = (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
     I0_h = (float *)sycl::malloc_host(dataSize, q);
-    pI1_h = (float *)sycl::malloc_host(stride * height * sizeof(sycl::float4), q);
     I1_h = (float *)sycl::malloc_host(dataSize, q);
-    src_d0 = (float *)sycl::malloc_device(stride * height * sizeof(sycl::float4), q);
-    src_d1 = (float *)sycl::malloc_device(stride * height * sizeof(sycl::float4), q);
+    src_d0 = (float *)sycl::malloc_shared(stride * height * sizeof(sycl::float4), q);
+    src_d1 = (float *)sycl::malloc_shared(stride * height * sizeof(sycl::float4), q);
 }
 
 
@@ -119,8 +117,6 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
     // prepare pyramid
     int currentLevel = nLevels - 1;
 
-    q.memcpy((void *)I0_h, I0, dataSize);
-    q.memcpy((void *)I1_h, I1, dataSize);
     q.memcpy((void *)pI0[currentLevel], I0, dataSize);
     q.memcpy((void *)pI1[currentLevel], I1, dataSize);
     q.wait();
@@ -137,13 +133,14 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
         *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(ns * nh * sizeof(float), q);
         *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(ns * nh * sizeof(float), q);
 
-        Downscale(pI0[currentLevel], pW[currentLevel],
-                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
-                    (float *)pI0[currentLevel - 1], q);
 
-        Downscale(pI1[currentLevel], pW[currentLevel],
-                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
-                    (float *)pI1[currentLevel - 1], q);
+        Downscale(pI0[currentLevel], I0_h, src_d0, pW[currentLevel],
+                pH[currentLevel], pS[currentLevel], nw, nh, ns,
+                (float *)pI0[currentLevel - 1], q);
+
+        Downscale(pI1[currentLevel], I0_h, src_d0, pW[currentLevel],
+                pH[currentLevel], pS[currentLevel], nw, nh, ns,
+                (float *)pI1[currentLevel - 1], q);
 
         pW[currentLevel - 1] = nw;
         pH[currentLevel - 1] = nh;
@@ -164,12 +161,12 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
 
       // on current level we compute optical flow
       // between frame 0 and warped frame 1
-       WarpImage(pI1[currentLevel], pW[currentLevel], pH[currentLevel],
+       WarpImage(pI1[currentLevel], I0_h, src_d0, pW[currentLevel], pH[currentLevel],
                 pS[currentLevel], d_u, d_v, d_tmp, q);
 
 
-      ComputeDerivatives(pI0[currentLevel], d_tmp,
-                         pW[currentLevel],
+      ComputeDerivatives(pI0[currentLevel], d_tmp, I0_h, I1_h,
+                         src_d0, src_d1, pW[currentLevel],
                          pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
 
       for (int iter = 0; iter < nSolverIters; ++iter) {
@@ -189,13 +186,13 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
       // prolongate solution
       float scaleX = (float)pW[currentLevel + 1] / (float)pW[currentLevel];
 
-      Upscale(d_u, pW[currentLevel], pH[currentLevel], pS[currentLevel],
+      Upscale(d_u, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
               pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
               scaleX, d_nu, q);
 
       float scaleY = (float)pH[currentLevel + 1] / (float)pH[currentLevel];
 
-      Upscale(d_v, pW[currentLevel], pH[currentLevel], pS[currentLevel],
+      Upscale(d_v, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
               pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
               scaleY, d_nv, q);
 
@@ -234,9 +231,7 @@ void deleteFlow_mem(sycl::queue q, int nLevels) {
     sycl::free(d_nv, q);
     sycl::free(d_u, q);
     sycl::free(d_v, q);
-    sycl::free(pI0_h, q);
     sycl::free(I0_h, q);
-    sycl::free(pI1_h, q);
     sycl::free(I1_h, q);
     sycl::free(src_d0, q);
     sycl::free(src_d1, q);

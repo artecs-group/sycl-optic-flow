@@ -38,11 +38,10 @@
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
 void DownscaleKernel(int width, int height, int stride, float *out,
-                     sycl::accessor<sycl::float4, 2, sycl::access::mode::read,
-                              sycl::access::target::image>
-                         tex_acc,
-                     sycl::sampler texDesc,
-                     const sycl::nd_item<3> &item_ct1) {
+sycl::accessor<sycl::float4, 2, sycl::access::mode::read, sycl::access::target::image> tex_acc,
+sycl::sampler texDesc,
+const sycl::nd_item<3> &item_ct1) 
+{
   const int ix = item_ct1.get_local_id(2) +
                  item_ct1.get_group(2) * item_ct1.get_local_range(2);
   const int iy = item_ct1.get_local_id(1) +
@@ -75,28 +74,25 @@ void DownscaleKernel(int width, int height, int stride, float *out,
 /// \param[in]  stride  image stride
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
-static void Downscale(const float *src, int width, int height, int stride,
-                      int newWidth, int newHeight, int newStride, float *out, sycl::queue q) {
+static void Downscale(const float *src, float *I0_h, float *src_p, int width, int height, int stride,
+int newWidth, int newHeight, int newStride, float *out, sycl::queue q) 
+{
   sycl::range<3> threads(1, 8, 32);
   sycl::range<3> blocks(1, iDivUp(newHeight, threads[1]),
                         iDivUp(newWidth, threads[2]));
-    
-  int dataSize = height * stride * sizeof(float);
-  float *src_h = (float *)malloc(dataSize);
-  q.memcpy(src_h, src, dataSize).wait();
 
-  float *src_p =
-      (float *)sycl::malloc_shared(height * stride * sizeof(sycl::float4), q);
-  for (int i = 0; i < 4 * height * stride; i++) src_p[i] = 0.f;
+  int dataSize = height * stride * sizeof(float);
+
+  q.memcpy(I0_h, src, dataSize).wait();
 
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       int index = i * stride + j;
-      src_p[index * 4 + 0] = src_h[index];
+      src_p[index * 4 + 0] = I0_h[index];
       src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
     }
   }
-
+  
   auto texDescr = sycl::sampler(
       sycl::coordinate_normalization_mode::unnormalized,
       sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::nearest);

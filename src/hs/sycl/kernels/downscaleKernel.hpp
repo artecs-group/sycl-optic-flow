@@ -49,8 +49,9 @@ void DownscaleKernel(int width, int height, int stride, float *out,
   const int iy = item_ct1.get_local_id(1) +
                  item_ct1.get_group(1) * item_ct1.get_local_range(1);
 
-  if (ix >= width || iy >= height)
+  if (ix >= width || iy >= height) {
     return;
+  }
 
   int srcx = ix * 2;
   int srcy = iy * 2;
@@ -75,26 +76,28 @@ void DownscaleKernel(int width, int height, int stride, float *out,
 /// \param[in]  stride  image stride
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
-static void Downscale(const float *src, float *pI0_h, float *I0_h, float *src_p, int width, int height, int stride,
+static void Downscale(const float *src, int width, int height, int stride,
                       int newWidth, int newHeight, int newStride, float *out, sycl::queue q) {
   sycl::range<3> threads(1, 8, 32);
   sycl::range<3> blocks(1, iDivUp(newHeight, threads[1]),
                         iDivUp(newWidth, threads[2]));
-
+    
   int dataSize = height * stride * sizeof(float);
+  float *src_h = (float *)malloc(dataSize);
+  q.memcpy(src_h, src, dataSize).wait();
 
-  q.memcpy(I0_h, src, dataSize).wait();
+  float *src_p =
+      (float *)sycl::malloc_shared(height * stride * sizeof(sycl::float4), q);
+  for (int i = 0; i < 4 * height * stride; i++) src_p[i] = 0.f;
 
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       int index = i * stride + j;
-      pI0_h[index * 4 + 0] = I0_h[index];
-      pI0_h[index * 4 + 1] = pI0_h[index * 4 + 2] = pI0_h[index * 4 + 3] = 0.f;
+      src_p[index * 4 + 0] = src_h[index];
+      src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
     }
   }
 
-  q.memcpy(src_p, pI0_h, height * width * sizeof(sycl::float4)).wait();
-  
   auto texDescr = sycl::sampler(
       sycl::coordinate_normalization_mode::unnormalized,
       sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::nearest);

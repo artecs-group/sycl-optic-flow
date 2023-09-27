@@ -72,7 +72,7 @@ void UpscaleKernel(int width, int height, int stride, float scale, float *out,
 /// \param[in]  scale       value scale factor (multiplier)
 /// \param[out] out         upscaled field component
 ///////////////////////////////////////////////////////////////////////////////
-static void Upscale(const float *src, float *pI0_h, float *I0_h, float *src_p, int width, int height, int stride,
+static void Upscale(const float *src, int width, int height, int stride,
                     int newWidth, int newHeight, int newStride, float scale,
                     float *out, sycl::queue q) {
   sycl::range<3> threads(1, 8, 32);
@@ -80,17 +80,18 @@ static void Upscale(const float *src, float *pI0_h, float *I0_h, float *src_p, i
                         iDivUp(newWidth, threads[2]));
 
   int dataSize = stride * height * sizeof(float);
-  q.memcpy(I0_h, src, dataSize).wait();
+  float *src_h = (float *)malloc(dataSize);
+  q.memcpy(src_h, src, dataSize).wait();
 
+  float *src_p =
+      (float *)sycl::malloc_shared(height * stride * sizeof(sycl::float4), q);
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       int index = i * stride + j;
-      pI0_h[index * 4 + 0] = I0_h[index];
-      pI0_h[index * 4 + 1] = pI0_h[index * 4 + 2] = pI0_h[index * 4 + 3] = 0.f;
+      src_p[index * 4 + 0] = src_h[index];
+      src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
     }
   }
-  q.memcpy(src_p, pI0_h, height * stride * sizeof(sycl::float4)).wait();
-
   auto texDescr = sycl::sampler(
       sycl::coordinate_normalization_mode::unnormalized,
       sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::linear);

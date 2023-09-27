@@ -130,30 +130,30 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
     pH[currentLevel] = height;
     pS[currentLevel] = stride;
 
-    for (; currentLevel > 0; --currentLevel) {
-        int nw = pW[currentLevel] / 2;
-        int nh = pH[currentLevel] / 2;
-        int ns = iAlignUp(nw);
+  for (; currentLevel > 0; --currentLevel) {
+    int nw = pW[currentLevel] / 2;
+    int nh = pH[currentLevel] / 2;
+    int ns = iAlignUp(nw);
 
-        checkCudaErrors(DPCT_CHECK_ERROR(
-            *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(
-                ns * nh * sizeof(float), q)));
-        checkCudaErrors(DPCT_CHECK_ERROR(
-            *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(
-                ns * nh * sizeof(float), q)));
+    checkCudaErrors(DPCT_CHECK_ERROR(
+        *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(
+            ns * nh * sizeof(float), q)));
+    checkCudaErrors(DPCT_CHECK_ERROR(
+        *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(
+            ns * nh * sizeof(float), q)));
 
-        Downscale(pI0[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
-                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
-                    (float *)pI0[currentLevel - 1], q);
+    Downscale(pI0[currentLevel], pW[currentLevel],
+              pH[currentLevel], pS[currentLevel], nw, nh, ns,
+              (float *)pI0[currentLevel - 1], q);
 
-        Downscale(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel],
-                    pH[currentLevel], pS[currentLevel], nw, nh, ns,
-                    (float *)pI1[currentLevel - 1], q);
+    Downscale(pI1[currentLevel], pW[currentLevel],
+              pH[currentLevel], pS[currentLevel], nw, nh, ns,
+              (float *)pI1[currentLevel - 1], q);
 
-        pW[currentLevel - 1] = nw;
-        pH[currentLevel - 1] = nh;
-        pS[currentLevel - 1] = ns;
-    }
+    pW[currentLevel - 1] = nw;
+    pH[currentLevel - 1] = nh;
+    pS[currentLevel - 1] = ns;
+  }
 
   checkCudaErrors(
       DPCT_CHECK_ERROR(q.memset(d_u, 0, stride * height * sizeof(float))));
@@ -163,58 +163,57 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
     DPCT_CHECK_ERROR(q.wait()));
 
   // compute flow
-    for (; currentLevel < nLevels; ++currentLevel) {
-        for (int warpIter = 0; warpIter < nWarpIters; ++warpIter) {
-            checkCudaErrors(DPCT_CHECK_ERROR(
-                q.memset(d_du0, 0, dataSize)));
-            checkCudaErrors(DPCT_CHECK_ERROR(
-                q.memset(d_dv0, 0, dataSize)));
+  for (; currentLevel < nLevels; ++currentLevel) {
+    for (int warpIter = 0; warpIter < nWarpIters; ++warpIter) {
+      checkCudaErrors(DPCT_CHECK_ERROR(
+          q.memset(d_du0, 0, dataSize)));
+      checkCudaErrors(DPCT_CHECK_ERROR(
+          q.memset(d_dv0, 0, dataSize)));
 
-            checkCudaErrors(DPCT_CHECK_ERROR(
-                q.memset(d_du1, 0, dataSize)));
-            checkCudaErrors(DPCT_CHECK_ERROR(
-                q.memset(d_dv1, 0, dataSize)));
+      checkCudaErrors(DPCT_CHECK_ERROR(
+          q.memset(d_du1, 0, dataSize)));
+      checkCudaErrors(DPCT_CHECK_ERROR(
+          q.memset(d_dv1, 0, dataSize)));
 
-            // on current level we compute optical flow
-            // between frame 0 and warped frame 1
-            WarpImage(pI1[currentLevel], pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel],
-                    pS[currentLevel], d_u, d_v, d_tmp, q);
+      // on current level we compute optical flow
+      // between frame 0 and warped frame 1
+       WarpImage(pI1[currentLevel], pW[currentLevel], pH[currentLevel],
+                pS[currentLevel], d_u, d_v, d_tmp, q);
 
-            ComputeDerivatives(pI0[currentLevel], d_tmp, pI0_h, pI1_h, I0_h, I1_h,
-                                src_d0, src_d1, pW[currentLevel],
-                                pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
+      ComputeDerivatives(pI0[currentLevel], d_tmp, pW[currentLevel],
+                         pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
 
-            for (int iter = 0; iter < nSolverIters; ++iter) {
-                SolveForUpdate(d_du0, d_dv0, d_Ix, d_Iy, d_Iz, pW[currentLevel],
-                                pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
+      for (int iter = 0; iter < nSolverIters; ++iter) {
+        SolveForUpdate(d_du0, d_dv0, d_Ix, d_Iy, d_Iz, pW[currentLevel],
+                       pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
 
-                Swap(d_du0, d_du1);
-                Swap(d_dv0, d_dv1);
-            }
+        Swap(d_du0, d_du1);
+        Swap(d_dv0, d_dv1);
+      }
 
-            // update u, v
-            Add(d_u, d_du0, pH[currentLevel] * pS[currentLevel], d_u, q);
-            Add(d_v, d_dv0, pH[currentLevel] * pS[currentLevel], d_v, q);
-        }
-
-        if (currentLevel != nLevels - 1) {
-            // prolongate solution
-            float scaleX = (float)pW[currentLevel + 1] / (float)pW[currentLevel];
-
-            Upscale(d_u, pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
-                    pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
-                    scaleX, d_nu, q);
-
-            float scaleY = (float)pH[currentLevel + 1] / (float)pH[currentLevel];
-
-            Upscale(d_v, pI0_h, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
-                    pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
-                    scaleY, d_nv, q);
-
-            Swap(d_u, d_nu);
-            Swap(d_v, d_nv);
-        }
+      // update u, v
+      Add(d_u, d_du0, pH[currentLevel] * pS[currentLevel], d_u, q);
+      Add(d_v, d_dv0, pH[currentLevel] * pS[currentLevel], d_v, q);
     }
+
+    if (currentLevel != nLevels - 1) {
+      // prolongate solution
+      float scaleX = (float)pW[currentLevel + 1] / (float)pW[currentLevel];
+
+      Upscale(d_u, pW[currentLevel], pH[currentLevel], pS[currentLevel],
+              pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
+              scaleX, d_nu, q);
+
+      float scaleY = (float)pH[currentLevel + 1] / (float)pH[currentLevel];
+
+      Upscale(d_v, pW[currentLevel], pH[currentLevel], pS[currentLevel],
+              pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
+              scaleY, d_nv, q);
+
+      Swap(d_u, d_nu);
+      Swap(d_v, d_nv);
+    }
+  }
 
     q.memcpy(u, d_u, dataSize);
     q.memcpy(v, d_v, dataSize);

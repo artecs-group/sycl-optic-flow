@@ -118,32 +118,32 @@ void ComputeDerivativesKernel(int width, int height, int stride, float *Ix,
 /// \param[out] Iy  y derivative
 /// \param[out] Iz  temporal derivative
 ///////////////////////////////////////////////////////////////////////////////
-static void ComputeDerivatives(const float *I0, const float *I1, float *pI0_h,
-                               float *pI1_h, float *I0_h, float *I1_h,
-                               float *src_d0, float *src_d1, int w, int h,
-                               int s, float *Ix, float *Iy, float *Iz, sycl::queue q) {
+static void ComputeDerivatives(const float *I0, const float *I1, int w, int h, int s, float *Ix, float *Iy, float *Iz, sycl::queue q) {
   sycl::range<3> threads(1, 6, 32);
   sycl::range<3> blocks(1, iDivUp(h, threads[1]), iDivUp(w, threads[2]));
 
   int dataSize = s * h * sizeof(float);
 
-  q.memcpy(I0_h, I0, dataSize);
-  q.memcpy(I1_h, I1, dataSize);
-  q.wait();
+  float *I0_h = (float *)malloc(dataSize);
+  float *I1_h = (float *)malloc(dataSize);
+  q.memcpy(I0_h, I0, dataSize).wait();
+  q.memcpy(I1_h, I1, dataSize).wait();
 
+  float *I0_p = (float *)sycl::malloc_shared(h * s * sizeof(sycl::float4), q);
   for (int i = 0; i < h; i++) {
     for (int j = 0; j < w; j++) {
       int index = i * s + j;
-      pI0_h[index * 4 + 0] = I0_h[index];
-      pI0_h[index * 4 + 1] = pI0_h[index * 4 + 2] = pI0_h[index * 4 + 3] = 0.f;
+      I0_p[index * 4 + 0] = I0_h[index];
+      I0_p[index * 4 + 1] = I0_p[index * 4 + 2] = I0_p[index * 4 + 3] = 0.f;
     }
   }
 
+  float *I1_p = (float *)sycl::malloc_shared(h * s * sizeof(sycl::float4), q);
   for (int i = 0; i < h; i++) {
     for (int j = 0; j < w; j++) {
       int index = i * s + j;
-      pI1_h[index * 4 + 0] = I1_h[index];
-      pI1_h[index * 4 + 1] = pI1_h[index * 4 + 2] = pI1_h[index * 4 + 3] = 0.f;
+      I1_p[index * 4 + 0] = I1_h[index];
+      I1_p[index * 4 + 1] = I1_p[index * 4 + 2] = I1_p[index * 4 + 3] = 0.f;
     }
   }
 
@@ -152,12 +152,12 @@ static void ComputeDerivatives(const float *I0, const float *I1, float *pI0_h,
       sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::nearest);
 
   auto texSource =
-      sycl::image<2>(src_d0, sycl::image_channel_order::rgba,
+      sycl::image<2>(I0_p, sycl::image_channel_order::rgba,
                          sycl::image_channel_type::fp32, sycl::range<2>(w, h),
                          sycl::range<1>(s * sizeof(sycl::float4)));
 
   auto texTarget =
-      sycl::image<2>(src_d1, sycl::image_channel_order::rgba,
+      sycl::image<2>(I1_p, sycl::image_channel_order::rgba,
                          sycl::image_channel_type::fp32, sycl::range<2>(w, h),
                          sycl::range<1>(s * sizeof(sycl::float4)));
   

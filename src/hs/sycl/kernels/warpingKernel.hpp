@@ -58,6 +58,7 @@ void WarpingKernel(int width, int height, int stride, const float *u,
   float y = ((float)iy + v[pos]);
 
   auto inputCoord = sycl::float2(x, y);
+
   out[pos] = texToWarp.read(inputCoord, texDesc)[0];
 }
 
@@ -77,23 +78,23 @@ void WarpingKernel(int width, int height, int stride, const float *u,
 /// \param[in]  v   vertical displacement
 /// \param[out] out warped image
 ///////////////////////////////////////////////////////////////////////////////
-static void WarpImage(const float *src, float *pI0_h, float *I0_h, float *src_p, int w, int h, int s, const float *u,
+static void WarpImage(const float *src, int w, int h, int s, const float *u,
                       const float *v, float *out, sycl::queue q) {
   sycl::range<3> threads(1, 6, 32);
   sycl::range<3> blocks(1, iDivUp(h, threads[1]), iDivUp(w, threads[2]));
 
   int dataSize = s * h * sizeof(float);
-  q.memcpy(I0_h, src, dataSize).wait();
+  float *src_h = (float *)malloc(dataSize);
+  q.memcpy(src_h, src, dataSize).wait();
 
+  float *src_p = (float *)sycl::malloc_shared(h * s * sizeof(sycl::float4), q);
   for (int i = 0; i < h; i++) {
     for (int j = 0; j < w; j++) {
       int index = i * s + j;
-      pI0_h[index * 4 + 0] = I0_h[index];
-      pI0_h[index * 4 + 1] = pI0_h[index * 4 + 2] = pI0_h[index * 4 + 3] = 0.f;
+      src_p[index * 4 + 0] = src_h[index];
+      src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
     }
   }
-  q.memcpy(src_p, pI0_h, s * h * sizeof(sycl::float4)).wait();
-
   auto texDescr = sycl::sampler(
       sycl::coordinate_normalization_mode::unnormalized,
       sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::linear);

@@ -1,4 +1,3 @@
-#include <CL/sycl.hpp>
 #include <string>
 #include <cmath>
 #include <iostream>
@@ -8,23 +7,22 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include "tvl1.hpp"
+#include "flow.cuh"
 
 using namespace cv;
-using namespace cl;
 
 
 class App {
 public:
     App(const CommandLineParser& cmd);
     void initVideoSource();
-    void initSYCL();
+    void initCuda();
     int run();
     bool isRunning() { return m_running; }
     bool doProcess() { return m_process; }
     void setRunning(bool running)      { m_running = running; }
     void setDoProcess(bool process)    { m_process = process; }
-    void flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame); 
+    void flowToColor(int width, int height, const float* Vx, const float* Vy, cv::Mat& outFrame); 
 protected:
     void handleKey(char key);
 private:
@@ -38,16 +36,13 @@ private:
     float                       m_frequency;
 
     std::string                 m_file_name;
-    int                         m_camera_id;
     cv::VideoCapture            m_cap;
     cv::Mat                     m_frame;
-    sycl::queue                 m_syclQueue;
 };
 
 
 App::App(const CommandLineParser& cmd)
 {
-    m_camera_id  = cmd.get<int>("camera");
     m_file_name  = cmd.get<std::string>("video");
     m_show_ui    = cmd.get<bool>("show");
 
@@ -56,34 +51,25 @@ App::App(const CommandLineParser& cmd)
 } // ctor
 
 
-void App::initSYCL() {
-    // Configuration details: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
-    m_syclQueue = sycl::queue(sycl::default_selector_v);
+void App::initCuda() {
+
 }
 
 
 void App::initVideoSource()
 {
-    if (!m_file_name.empty() && m_camera_id == -1)
+    if (!m_file_name.empty())
     {
         m_cap.open(samples::findFileOrKeep(m_file_name));
         if (!m_cap.isOpened())
             throw std::runtime_error(std::string("can't open video stream: ") + m_file_name);
-    }
-    else if (m_camera_id != -1)
-    {
-        m_cap.open(m_camera_id);
-        if (!m_cap.isOpened())
-            throw std::runtime_error(std::string("can't open camera: ") + std::to_string(m_camera_id));
-        // m_cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-        // m_cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
     }
     else
         throw std::runtime_error(std::string("specify video source"));
 } // initVideoSource()
 
 
-void App::flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame) {
+void App::flowToColor(int width, int height, const float* Vx, const float* Vy, cv::Mat& outFrame) {
     cv::Mat flow_magnitude(height, width, CV_32F);
     cv::Mat flow_angle(height, width, CV_32F);
 
@@ -93,8 +79,8 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
         #pragma omp simd
         for (int x = 0; x < width; ++x) {
             int index = y * width + x;
-            float u = flowData[index];
-            float v = flowData[index + width * height];
+            float u = Vx[index];
+            float v = Vy[index];
             flow_magnitude.at<float>(y, x) = std::sqrt(u * u + v * v);
             flow_angle.at<float>(y, x) = std::atan2(v, u);
         }
@@ -122,14 +108,23 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
     cv::cvtColor(hsv, outFrame, cv::COLOR_HSV2BGR);
 }
 
+void transformImage_uchar2float(unsigned char* in, float* out, int width, int height)
+{
+    #pragma omp parallel for
+    for(int i=0; i<height; i++)
+        #pragma omp simd
+        for(int j=0; j<width; j++)
+            out[i*width+j] = (float)(in[i*width+j]);
+}
 
 int App::run() {
     std::cout << "Initializing..." << std::endl;
 
-    initSYCL();
-    const std::string devName = m_syclQueue.get_device().get_info<sycl::info::device::name>();
-    std::cout << "Running on: " << devName << std::endl;
-
+    //initCuda();
+    cudaDeviceProp devProps;
+    cudaGetDeviceProperties(&devProps, 0);
+    std::string devName = devProps.name; 
+    
     initVideoSource();
 
     std::cout << "Press ESC to exit" << std::endl;
@@ -138,12 +133,34 @@ int App::run() {
     m_running = true;
     m_process = true;
 
-    const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
-	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    const int width   = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
+    const int height  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    const int nframes = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_COUNT));
+
+    constexpr float alpha{0.2f};
+    // number of pyramid levels
+    constexpr int nLevels{5};
+
+    // number of solver iterations on each level
+    constexpr int nSolverIters{500};
+
+    // number of warping iterations
+    constexpr int nWarpIters{3};
+
+    // row access stride
+    int stride = width;
+
+    // Allocate mem in GPU
+    initFlow(nLevels, stride, width, height);
+
+    float* ImageIn0 = new float [width*height];
+    float* ImageIn1 = new float [width*height];
+    float *Im0, *Im1;
+
+    float* Vx = new float [width*height];
+    float* Vy = new float [width*height];
 
     // buffers required for the image proccesing
-    float* img = new float[width * height]{0};
-    TV_L1 tvl1 = TV_L1(m_syclQueue, width, height);
     unsigned int processedFrames{0};
     double fps{0};
     cv::TickMeter timer;
@@ -160,23 +177,24 @@ int App::run() {
             cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-                #pragma omp parallel for simd
-                for (size_t i = 0; i < width*height; i++) {
-                    img[i] = static_cast<float>(m_frameGray.data[i]);
-                }
-                try {
-                    tvl1.runDualTVL1Multiscale(img);
-                }
-                catch(const std::exception& e) {
-                    std::cerr << e.what() << '\n';
-                }
+		        if(processedFrames%2){
+                    transformImage_uchar2float(m_frameGray.data, ImageIn1, width, height);
+                    Im0 = ImageIn1;
+                    Im1 = ImageIn0;
+		        } else {
+                    transformImage_uchar2float(m_frameGray.data, ImageIn0, width, height);
+                    Im0 = ImageIn0;
+                    Im1 = ImageIn1;
+		        }
+                ComputeFlow(Im0, Im1, width, height, stride, alpha, nLevels, nWarpIters, nSolverIters, Vx, Vy);
             }
             timer.stop();
             fps += 1000 / timer.getTimeMilli();
 
             if (m_show_ui) {
                 try {
-                    if (m_process) { flowToColor(width, height, tvl1.getU(), m_frameGray); }
+                    if(m_process)
+                        flowToColor(width, height, Vx, Vy, m_frameGray);
                     cv::Mat imgToShow = m_frameGray;
                     std::ostringstream msg, msg2;
                     int currentFPS = 1000 / timer.getTimeMilli();
@@ -206,7 +224,11 @@ int App::run() {
                 catch (const std::exception& e) {
                     std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
                     if (processedFrames > 0) {
-                        delete[] img;
+                        delete[] ImageIn0;
+                        delete[] ImageIn1;
+                        delete[] Vx;
+                        delete[] Vy;
+                        deleteFlow_mem(nLevels);
                         throw;
                     }
                     m_show_ui = false;  // UI is not available
@@ -226,11 +248,19 @@ int App::run() {
         std::cout << std::endl;
         std::cout << "Number of frames = " << processedFrames << std::endl;
         std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
-        delete[] img;
+        delete[] ImageIn0;
+        delete[] ImageIn1;
+        delete[] Vx;
+        delete[] Vy;
+        deleteFlow_mem(nLevels);
         return 0;
     }
 
-    delete[] img;
+    delete[] ImageIn0;
+    delete[] ImageIn1;
+    delete[] Vx;
+    delete[] Vy;
+    deleteFlow_mem(nLevels);
     return 0;
 }
 
@@ -239,9 +269,8 @@ int main(int argc, char** argv)
 {
     const char* keys =
         "{ help h ?    |          | print help message }"
-        "{ camera c    | -1       | use camera as input }"
         "{ video  v    |          | use video as input }"
-        "{ show   s    | true     | show user interface }";
+        "{ show   s    |   true   | show user interface }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.has("help"))

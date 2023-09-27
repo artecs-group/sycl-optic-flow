@@ -64,9 +64,9 @@ void bicubicInterpolationWarp(const float *input, const float *u,
                                             const float *v, float *output,
                                             int nx, int ny, bool border_out, int blocks, int threads, sycl::queue queue);
 
-void normKernel(const float *__restrict__ I0,
-                              const float *__restrict__ I1,
-                              float *__restrict__ I0n, float *__restrict__ I1n,
+void normKernel(const float* I0,
+                              const float* I1,
+                              float* I0n, float* I1n,
                               float min, float den, int size,
                               int blocks, int threads, sycl::queue queue);
 void calculateRhoGrad(const float *I1wx, const float *I1wy,

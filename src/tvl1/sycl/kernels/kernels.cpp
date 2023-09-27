@@ -103,7 +103,7 @@ void rowsForwardGradient(const float *f, float *fx, float *fy,
 
         if(j < (nx-1)){
             fx[p] = f[p+1] - f[p];
-            fy[p] = 0;
+            fy[p] = 0.0f;
         }
     });
 }
@@ -121,7 +121,7 @@ void columnsForwardGradient(const float *f, float *fx, float *fy,
         const int p = i * nx-1;
 
         if(i < ny){
-            fx[p] = 0;
+            fx[p] = 0.0f;
             fy[p] = f[p+nx] - f[p];
         }
     });
@@ -138,8 +138,8 @@ void bodyGradient(const float *input, float *dx, float *dy,
     {
         const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         if(i < (nx-1)*(ny-1)){
-            dx[i] = 0.5*(input[i+1] - input[i-1]);
-            dy[i] = 0.5*(input[i+nx] - input[i-nx]);
+            dx[i] = 0.5f*(input[i+1] - input[i-1]);
+            dy[i] = 0.5f*(input[i+nx] - input[i-nx]);
         }
     });
 }
@@ -156,10 +156,10 @@ void edgeRowsGradient(const float *input, float *dx, float *dy,
         const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
         const int k = (ny - 1) * nx + j;
         if(j < nx-1) {
-            dx[j] = 0.5*(input[j+1] - input[j-1]);
-            dy[j] = 0.5*(input[j+nx] - input[j]);
-            dx[k] = 0.5*(input[k+1] - input[k-1]);
-            dy[k] = 0.5*(input[k] - input[k-nx]);
+            dx[j] = 0.5f*(input[j+1] - input[j-1]);
+            dy[j] = 0.5f*(input[j+nx] - input[j]);
+            dx[k] = 0.5f*(input[k+1] - input[k-1]);
+            dy[k] = 0.5f*(input[k] - input[k-nx]);
         }
     });
 }
@@ -177,10 +177,10 @@ void edgeColumnsGradient(const float *input, float *dx, float *dy,
         const int p = i * nx;
         const int k = (i+1) * nx - 1;
         if(i < ny-1) {
-            dx[p] = 0.5*(input[p+1] - input[p]);
-            dy[p] = 0.5*(input[p+nx] - input[p-nx]);
-            dx[k] = 0.5*(input[k] - input[k-1]);
-            dy[k] = 0.5*(input[k+nx] - input[k-nx]);
+            dx[p] = 0.5f*(input[p+1] - input[p]);
+            dy[p] = 0.5f*(input[p+nx] - input[p-nx]);
+            dx[k] = 0.5f*(input[k] - input[k-1]);
+            dy[k] = 0.5f*(input[k+nx] - input[k-nx]);
         }
     });
 }
@@ -190,17 +190,17 @@ void cornersGradient(const float *input, float *dx, float *dy,
 {
     queue.parallel_for<class cornersGradient>(1, [=](sycl::item<1> i)
     {
-        dx[0] = 0.5*(input[1] - input[0]);
-        dy[0] = 0.5*(input[nx] - input[0]);
+        dx[0] = 0.5f*(input[1] - input[0]);
+        dy[0] = 0.5f*(input[nx] - input[0]);
 
-        dx[nx-1] = 0.5*(input[nx-1] - input[nx-2]);
-        dy[nx-1] = 0.5*(input[2*nx-1] - input[nx-1]);
+        dx[nx-1] = 0.5f*(input[nx-1] - input[nx-2]);
+        dy[nx-1] = 0.5f*(input[2*nx-1] - input[nx-1]);
 
-        dx[(ny-1)*nx] = 0.5*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
-        dy[(ny-1)*nx] = 0.5*(input[(ny-1)*nx] - input[(ny-2)*nx]);
+        dx[(ny-1)*nx] = 0.5f*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
+        dy[(ny-1)*nx] = 0.5f*(input[(ny-1)*nx] - input[(ny-2)*nx]);
 
-        dx[ny*nx-1] = 0.5*(input[ny*nx-1] - input[ny*nx-1-1]);
-        dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+        dx[ny*nx-1] = 0.5f*(input[ny*nx-1] - input[ny*nx-1-1]);
+        dy[ny*nx-1] = 0.5f*(input[ny*nx-1] - input[(ny-1)*nx-1]);
     });
 }
 
@@ -215,7 +215,7 @@ void convolution1D(float *B, int size, float sPi, float den,
         const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
         if(i < size)
-            B[i] = 1 / sPi * sycl::exp(-i * i / den);
+            B[i] = 1.0f / sPi * sycl::exp(-i * i / den);
     });
 }
 
@@ -345,8 +345,8 @@ void zoomSize(const int *nx, // width of the orignal image
     {
         //compute the new size corresponding to factor
         //we add 0.5 for rounding off to the closest number
-        *nxx = (int)(*nx * factor + 0.5);
-        *nyy = (int)(*ny * factor + 0.5);
+        *nxx = (int)(*nx * factor + 0.5f);
+        *nyy = (int)(*ny * factor + 0.5f);
     });
 }
 
@@ -369,9 +369,9 @@ inline float cubic_interpolation_cell (
 	float x      //point to be interpolated
 )
 {
-	return  v[1] + 0.5 * x * (v[2] - v[0] +
-		x * (2.0 *  v[0] - 5.0 * v[1] + 4.0 * v[2] - v[3] +
-		x * (3.0 * (v[1] - v[2]) + v[3] - v[0])));
+	return  v[1] + 0.5f * x * (v[2] - v[0] +
+		x * (2.0f *  v[0] - 5.0f * v[1] + 4.0f * v[2] - v[3] +
+		x * (3.0f * (v[1] - v[2]) + v[3] - v[0])));
 }
 
 
@@ -405,8 +405,8 @@ float bicubicInterpolationAt(
 	bool   border_out //if true, return zero outside the region
 )
 {
-	const int sx = (uu < 0)? -1: 1;
-	const int sy = (vv < 0)? -1: 1;
+	const int sx = (uu < 0.0f)? -1: 1;
+	const int sy = (vv < 0.0f)? -1: 1;
 
 	int x, y, mx, my, dx, dy, ddx, ddy;
 	bool out{false};
@@ -421,7 +421,7 @@ float bicubicInterpolationAt(
 	ddy = neumann_bc((int) vv + 2*sy, ny, &out);
 
 	if(out && border_out)
-		return 0.0;
+		return 0.0f;
 
 	//obtain the interpolation points of the image
 	float v[4];
@@ -597,9 +597,9 @@ void divideByG(const float *g1, const float *g2, size_t size,
     });
 }
 
-void normKernel(const float *__restrict__ I0,
-    const float *__restrict__ I1,
-    float *__restrict__ I0n, float *__restrict__ I1n,
+void normKernel(const float* I0,
+    const float* I1,
+    float* I0n, float* I1n,
     float min, float den, int size,
     int blocks, int threads, sycl::queue queue) 
 {
@@ -611,8 +611,8 @@ void normKernel(const float *__restrict__ I0,
         const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
         if(i < size) {
-            I0n[i] = 255.0 * (I0[i] - min) / den;
-            I1n[i] = 255.0 * (I1[i] - min) / den;
+            I0n[i] = 255.0f * (I0[i] - min) / den;
+            I1n[i] = 255.0f * (I1[i] - min) / den;
 	    }
     });
 }

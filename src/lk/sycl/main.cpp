@@ -1,4 +1,4 @@
-#include <CL/sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <string>
 #include <cmath>
 #include <iostream>
@@ -8,10 +8,9 @@
 #include <opencv2/videoio.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include "tvl1.hpp"
+#include "lucaskanade.hpp"
 
 using namespace cv;
-using namespace cl;
 
 
 class App {
@@ -24,7 +23,7 @@ public:
     bool doProcess() { return m_process; }
     void setRunning(bool running)      { m_running = running; }
     void setDoProcess(bool process)    { m_process = process; }
-    void flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame); 
+    void flowToColor(int width, int height, const float* Vx, const float* Vy, cv::Mat& outFrame); 
 protected:
     void handleKey(char key);
 private:
@@ -47,7 +46,6 @@ private:
 
 App::App(const CommandLineParser& cmd)
 {
-    m_camera_id  = cmd.get<int>("camera");
     m_file_name  = cmd.get<std::string>("video");
     m_show_ui    = cmd.get<bool>("show");
 
@@ -64,26 +62,18 @@ void App::initSYCL() {
 
 void App::initVideoSource()
 {
-    if (!m_file_name.empty() && m_camera_id == -1)
+    if (!m_file_name.empty())
     {
         m_cap.open(samples::findFileOrKeep(m_file_name));
         if (!m_cap.isOpened())
             throw std::runtime_error(std::string("can't open video stream: ") + m_file_name);
-    }
-    else if (m_camera_id != -1)
-    {
-        m_cap.open(m_camera_id);
-        if (!m_cap.isOpened())
-            throw std::runtime_error(std::string("can't open camera: ") + std::to_string(m_camera_id));
-        // m_cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-        // m_cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
     }
     else
         throw std::runtime_error(std::string("specify video source"));
 } // initVideoSource()
 
 
-void App::flowToColor(int width, int height, const float* flowData, cv::Mat& outFrame) {
+void App::flowToColor(int width, int height, const float* Vx, const float* Vy, cv::Mat& outFrame) {
     cv::Mat flow_magnitude(height, width, CV_32F);
     cv::Mat flow_angle(height, width, CV_32F);
 
@@ -93,8 +83,8 @@ void App::flowToColor(int width, int height, const float* flowData, cv::Mat& out
         #pragma omp simd
         for (int x = 0; x < width; ++x) {
             int index = y * width + x;
-            float u = flowData[index];
-            float v = flowData[index + width * height];
+            float u = Vx[index];
+            float v = Vy[index];
             flow_magnitude.at<float>(y, x) = std::sqrt(u * u + v * v);
             flow_angle.at<float>(y, x) = std::atan2(v, u);
         }
@@ -140,10 +130,16 @@ int App::run() {
 
     const int width  = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_WIDTH));
 	const int height = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+    const int nframes = static_cast<int>(m_cap.get(cv::CAP_PROP_FRAME_COUNT));
 
-    // buffers required for the image proccesing
-    float* img = new float[width * height]{0};
-    TV_L1 tvl1 = TV_L1(m_syclQueue, width, height);
+    constexpr int temp_conv_size{2};
+    constexpr int spac_conv_size{3};
+    constexpr int window_size{5};
+
+    float* Vx = new float [width*height];
+    float* Vy = new float [width*height];
+    LucasKanade lk(m_syclQueue, spac_conv_size, temp_conv_size, window_size, width, height);
+
     unsigned int processedFrames{0};
     double fps{0};
     cv::TickMeter timer;
@@ -160,15 +156,9 @@ int App::run() {
             cv::cvtColor(m_frame, m_frameGray, COLOR_BGR2GRAY);
 
             if (m_process) {
-                #pragma omp parallel for simd
-                for (size_t i = 0; i < width*height; i++) {
-                    img[i] = static_cast<float>(m_frameGray.data[i]);
-                }
-                try {
-                    tvl1.runDualTVL1Multiscale(img);
-                }
-                catch(const std::exception& e) {
-                    std::cerr << e.what() << '\n';
+                lk.copy_frames_circularbuffer_GPU_wrapper(m_frameGray.data, temp_conv_size, processedFrames, width*height);
+                if (processedFrames >= temp_conv_size-1) {
+                    lk.lucas_kanade(Vx, Vy, processedFrames);
                 }
             }
             timer.stop();
@@ -176,7 +166,8 @@ int App::run() {
 
             if (m_show_ui) {
                 try {
-                    if (m_process) { flowToColor(width, height, tvl1.getU(), m_frameGray); }
+                    if(m_process && (processedFrames >= temp_conv_size-1))
+                        flowToColor(width, height, Vx, Vy, m_frameGray);
                     cv::Mat imgToShow = m_frameGray;
                     std::ostringstream msg, msg2;
                     int currentFPS = 1000 / timer.getTimeMilli();
@@ -206,7 +197,8 @@ int App::run() {
                 catch (const std::exception& e) {
                     std::cerr << "ERROR(OpenCV UI): " << e.what() << std::endl;
                     if (processedFrames > 0) {
-                        delete[] img;
+                        delete[] Vx;
+                        delete[] Vy;
                         throw;
                     }
                     m_show_ui = false;  // UI is not available
@@ -226,11 +218,13 @@ int App::run() {
         std::cout << std::endl;
         std::cout << "Number of frames = " << processedFrames << std::endl;
         std::cout << "Avg of FPS = " << cv::format("%.2f", fps / processedFrames) << std::endl;
-        delete[] img;
+        delete[] Vx;
+        delete[] Vy;
         return 0;
     }
 
-    delete[] img;
+    delete[] Vx;
+    delete[] Vy;
     return 0;
 }
 
@@ -239,9 +233,8 @@ int main(int argc, char** argv)
 {
     const char* keys =
         "{ help h ?    |          | print help message }"
-        "{ camera c    | -1       | use camera as input }"
         "{ video  v    |          | use video as input }"
-        "{ show   s    | true     | show user interface }";
+        "{ show   s    |   true   | show user interface }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.has("help"))

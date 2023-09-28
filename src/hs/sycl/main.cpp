@@ -1,5 +1,4 @@
 #include <sycl/sycl.hpp>
-#include <dpct/dpct.hpp>
 #include <string>
 #include <cmath>
 #include <iostream>

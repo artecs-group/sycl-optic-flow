@@ -1,4 +1,9 @@
-#include <sycl/sycl.hpp>
+#ifdef ACPP
+    #include <CL/sycl.hpp>
+    using namespace cl;
+#else
+    #include <sycl/sycl.hpp>
+#endif
 #include "kernels.hpp"
 
 #define NTHREADS2D 16

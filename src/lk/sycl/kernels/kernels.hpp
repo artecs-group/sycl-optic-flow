@@ -1,7 +1,12 @@
 #ifndef KERNELS_CUH
 #define KERNELS_CUH
 
-#include <sycl/sycl.hpp>
+#ifdef ACPP
+    #include <CL/sycl.hpp>
+    using namespace cl;
+#else
+    #include <sycl/sycl.hpp>
+#endif
 
 void copy_frames_circularbuffer_GPU(sycl::queue queue, unsigned char *raw_frame, unsigned char *d_wind_frames, int temp_conv_size, int fr, int size);
 

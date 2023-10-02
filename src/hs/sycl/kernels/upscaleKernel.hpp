@@ -37,26 +37,21 @@
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
 void UpscaleKernel(int width, int height, int stride, float scale, float *out,
-                  sycl::accessor<sycl::float4, 2, sycl::access::mode::read,
-                            sycl::access::target::image>
-                       texCoarse_acc,
-                   sycl::sampler texDesc,
-                   const sycl::nd_item<3> &item_ct1) {
+                  float* src, const sycl::nd_item<3> &item_ct1) {
   const int ix = item_ct1.get_local_id(2) +
                  item_ct1.get_group(2) * item_ct1.get_local_range(2);
   const int iy = item_ct1.get_local_id(1) +
                  item_ct1.get_group(1) * item_ct1.get_local_range(1);
 
-  if (ix >= width || iy >= height) return;
+  if(ix >= width || iy >= height) return;
 
   float x = ((float)ix - 0.5f) * 0.5f;
   float y = ((float)iy - 0.5f) * 0.5f;
-
-  auto inputCoord = sycl::float2(x, y);
+  const size_t index = x*height + y;
 
   // exploit hardware interpolation
   // and scale interpolated vector to match next pyramid level resolution
-  out[ix + iy * stride] = texCoarse_acc.read(inputCoord, texDesc)[0] * scale;
+  out[ix + iy * stride] = src[index] * scale;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,33 +75,10 @@ static void Upscale(const float *src, float *I0_h, float *src_p, int width, int 
 
   int dataSize = stride * height * sizeof(float);
   q.memcpy(I0_h, src, dataSize).wait();
-
-  for (int i = 0; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      int index = i * stride + j;
-      src_p[index * 4 + 0] = I0_h[index];
-      src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
-    }
-  }
-
-  auto texDescr = sycl::sampler(
-      sycl::coordinate_normalization_mode::unnormalized,
-      sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::linear);
-
-  auto texCoarse = sycl::image<2>(
-      src_p, sycl::image_channel_order::rgba,
-      sycl::image_channel_type::fp32, sycl::range<2>(width, height),
-      sycl::range<1>(stride * sizeof(sycl::float4)));
+  q.memcpy(src_p, I0_h, width * height * sizeof(float)).wait();
   
-  q.submit([&](sycl::handler &cgh) {
-    auto texCoarse_acc =
-         texCoarse.template get_access<sycl::float4,
-                                       sycl::access::mode::read>(cgh);
-
-    cgh.parallel_for(sycl::nd_range<3>(blocks * threads, threads),
-                     [=](sycl::nd_item<3> item_ct1) {
-                       UpscaleKernel(newWidth, newHeight, newStride, scale, out,
-                                     texCoarse_acc, texDescr, item_ct1);
-                     });
+  q.parallel_for(sycl::nd_range<3>(blocks * threads, threads), [=](sycl::nd_item<3> item_ct1) {
+    UpscaleKernel(newWidth, newHeight, newStride, scale, out,
+                  src_p, item_ct1);
   });
 }

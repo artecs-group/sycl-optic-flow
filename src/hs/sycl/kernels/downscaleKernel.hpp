@@ -38,31 +38,22 @@
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
 void DownscaleKernel(int width, int height, int stride, float *out,
-sycl::accessor<sycl::float4, 2, sycl::access::mode::read, sycl::access::target::image> tex_acc,
-sycl::sampler texDesc,
-const sycl::nd_item<3> &item_ct1) 
+ float* src, const sycl::nd_item<3> &item_ct1) 
 {
   const int ix = item_ct1.get_local_id(2) +
                  item_ct1.get_group(2) * item_ct1.get_local_range(2);
   const int iy = item_ct1.get_local_id(1) +
                  item_ct1.get_group(1) * item_ct1.get_local_range(1);
 
-  if (ix >= width || iy >= height) {
-    return;
-  }
+  if (ix >= width || iy >= height) return;
 
-  int srcx = ix * 2;
-  int srcy = iy * 2;
+  const size_t srcx = ix * 2;
+  const size_t srcy = iy * 2;
 
-  auto inputCoords1 = sycl::float2(srcx + 0, srcy + 0);
-  auto inputCoords2 = sycl::float2(srcx + 0, srcy + 1);
-  auto inputCoords3 = sycl::float2(srcx + 1, srcy + 0);
-  auto inputCoords4 = sycl::float2(srcx + 1, srcy + 1);
-
-  out[ix + iy * stride] = 0.25f * (tex_acc.read(inputCoords1, texDesc)[0] +
-                                   tex_acc.read(inputCoords2, texDesc)[0] +
-                                   tex_acc.read(inputCoords3, texDesc)[0] +
-                                   tex_acc.read(inputCoords4, texDesc)[0]);
+  out[ix + iy * stride] = 0.25f * (src[srcx*height + srcy] +
+                                   src[srcx*height + (srcy+1)] +
+                                   src[(srcx+1)*height + srcy] +
+                                   src[(srcx+1)*height + (srcy+1)]);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,33 +75,16 @@ int newWidth, int newHeight, int newStride, float *out, sycl::queue q)
   int dataSize = height * stride * sizeof(float);
 
   q.memcpy(I0_h, src, dataSize).wait();
+  q.memcpy(src_p, I0_h, height * width * sizeof(float)).wait();
 
-  for (int i = 0; i < height; i++) {
-    for (int j = 0; j < width; j++) {
-      int index = i * stride + j;
-      src_p[index * 4 + 0] = I0_h[index];
-      src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
-    }
-  }
+  // for (int i = 0; i < height; i++) {
+  //   for (int j = 0; j < width; j++) {
+  //     int index = i * stride + j;
+  //     src_p[index] = I0_h[index];
+  //   }
+  // }
   
-  auto texDescr = sycl::sampler(
-      sycl::coordinate_normalization_mode::unnormalized,
-      sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::nearest);
-
-  auto texFine = sycl::image<2>(src_p, sycl::image_channel_order::rgba,
-                                    sycl::image_channel_type::fp32,
-                                    sycl::range<2>(width, height),
-                                    sycl::range<1>(stride * sizeof(sycl::float4)));
-  
-  q.submit([&](sycl::handler &cgh) {
-    auto tex_acc =
-         texFine.template get_access<sycl::float4,
-                                     sycl::access::mode::read>(cgh);
-
-    cgh.parallel_for(sycl::nd_range<3>(blocks * threads, threads),
-                     [=](sycl::nd_item<3> item_ct1) {
-                       DownscaleKernel(newWidth, newHeight, newStride, out,
-                                       tex_acc, texDescr, item_ct1);
-                     });
+  q.parallel_for(sycl::nd_range<3>(blocks * threads, threads), [=](sycl::nd_item<3> item_ct1) {
+    DownscaleKernel(newWidth, newHeight, newStride, out, src_p, item_ct1);
   });
 }

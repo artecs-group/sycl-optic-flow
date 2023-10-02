@@ -39,10 +39,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 void WarpingKernel(int width, int height, int stride, const float *u,
                    const float *v, float *out,
-                   sycl::accessor<sycl::float4, 2, sycl::access::mode::read,
-                            sycl::access::target::image>
-                       texToWarp,
-                   sycl::sampler texDesc,
+                   float* src,
                    const sycl::nd_item<3> &item_ct1) {
   const int ix = item_ct1.get_local_id(2) +
                  item_ct1.get_group(2) * item_ct1.get_local_range(2);
@@ -55,10 +52,9 @@ void WarpingKernel(int width, int height, int stride, const float *u,
 
   float x = ((float)ix + u[pos]);
   float y = ((float)iy + v[pos]);
+  const size_t index = x*height + y;
 
-  auto inputCoord = sycl::float2(x, y);
-
-  out[pos] = texToWarp.read(inputCoord, texDesc)[0];
+  out[pos] = src[index];
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -84,33 +80,9 @@ static void WarpImage(const float *src, float *I0_h, float *src_p, int w, int h,
 
   int dataSize = s * h * sizeof(float);
   q.memcpy(I0_h, src, dataSize).wait();
-
-  for (int i = 0; i < h; i++) {
-    for (int j = 0; j < w; j++) {
-      int index = i * s + j;
-      src_p[index * 4 + 0] = I0_h[index];
-      src_p[index * 4 + 1] = src_p[index * 4 + 2] = src_p[index * 4 + 3] = 0.f;
-    }
-  }
-
-  auto texDescr = sycl::sampler(
-      sycl::coordinate_normalization_mode::unnormalized,
-      sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::linear);
-
-  auto texToWarp =
-      sycl::image<2>(src_p, sycl::image_channel_order::rgba,
-                         sycl::image_channel_type::fp32, sycl::range<2>(w, h),
-                         sycl::range<1>(s * sizeof(sycl::float4)));
+  q.memcpy(src_p, I0_h, w * h * sizeof(float)).wait();
   
-  q.submit([&](sycl::handler &cgh) {
-    auto texToWarp_acc =
-         texToWarp.template get_access<sycl::float4,
-                                       sycl::access::mode::read>(cgh);
-
-    cgh.parallel_for(sycl::nd_range<3>(blocks * threads, threads),
-                     [=](sycl::nd_item<3> item_ct1) {
-                       WarpingKernel(w, h, s, u, v, out,
-                                     texToWarp_acc, texDescr, item_ct1);
-                     });
+  q.parallel_for(sycl::nd_range<3>(blocks * threads, threads), [=](sycl::nd_item<3> item_ct1) {
+    WarpingKernel(w, h, s, u, v, out, src_p, item_ct1);
   });
 }

@@ -41,13 +41,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 void ComputeDerivativesKernel(int width, int height, int stride, float *Ix,
                               float *Iy, float *Iz,
-                              sycl::accessor<sycl::float4, 2, sycl::access::mode::read,
-             sycl::access::target::image>
-        texSource,
-    sycl::accessor<sycl::float4, 2, sycl::access::mode::read,
-             sycl::access::target::image>
-        texTarget,
-    sycl::sampler texDesc,
+                              float* src, float* target,
                               const sycl::nd_item<3> &item_ct1) {
   const int ix = item_ct1.get_local_id(2) +
                  item_ct1.get_group(2) * item_ct1.get_local_range(2);
@@ -60,46 +54,34 @@ void ComputeDerivativesKernel(int width, int height, int stride, float *Ix,
 
   float t0, t1;
 
-  auto x_inputCoords1 = sycl::float2(ix - 2.0f, iy);
-  auto x_inputCoords2 = sycl::float2(ix - 1.0f, iy);
-  auto x_inputCoords3 = sycl::float2(ix + 1.0f, iy);
-  auto x_inputCoords4 = sycl::float2(ix + 2.0f, iy);
-
-  t0 = texSource.read(x_inputCoords1, texDesc)[0];
-  t0 -= texSource.read(x_inputCoords2, texDesc)[0] * 8.0f;
-  t0 += texSource.read(x_inputCoords3, texDesc)[0] * 8.0f;
-  t0 -= texSource.read(x_inputCoords4, texDesc)[0];
+  t0  = src[(ix - 2)*height + iy ];
+  t0 -= src[(ix - 1)*height + iy ] * 8.0f;
+  t0 += src[(ix + 1)*height + iy ] * 8.0f; 
+  t0 -= src[(ix + 2)*height + iy ];
   t0 /= 12.0f;
 
-  t1 = texTarget.read(x_inputCoords1, texDesc)[0];
-  t1 -= texTarget.read(x_inputCoords2, texDesc)[0] * 8.0f;
-  t1 += texTarget.read(x_inputCoords3, texDesc)[0] * 8.0f;
-  t1 -= texTarget.read(x_inputCoords4, texDesc)[0];
+  t1  = target[(ix - 2)*height + iy ];
+  t1 -= target[(ix - 1)*height + iy ] * 8.0f;
+  t1 += target[(ix + 1)*height + iy ] * 8.0f; 
+  t1 -= target[(ix + 2)*height + iy ];
   t1 /= 12.0f;
 
   Ix[pos] = (t0 + t1) * 0.5f;
 
   // t derivative
-  auto inputCoord = sycl::float2(ix, iy);
-  Iz[pos] = texTarget.read(inputCoord, texDesc)[0] -
-            texSource.read(inputCoord, texDesc)[0];
+  Iz[pos] = target[ix*height + iy ] - src[ix*height + iy ];
 
   // y derivative
-  auto y_inputCoords1 = sycl::float2(ix, iy - 2.0f);
-  auto y_inputCoords2 = sycl::float2(ix, iy - 1.0f);
-  auto y_inputCoords3 = sycl::float2(ix, iy + 1.0f);
-  auto y_inputCoords4 = sycl::float2(ix, iy + 2.0f);
-
-  t0 = texSource.read(y_inputCoords1, texDesc)[0];
-  t0 -= texSource.read(y_inputCoords2, texDesc)[0] * 8.0f;
-  t0 += texSource.read(y_inputCoords3, texDesc)[0] * 8.0f;
-  t0 -= texSource.read(y_inputCoords4, texDesc)[0];
+  t0  = src[ix*height + (iy - 2) ];
+  t0 -= src[ix*height + (iy - 1) ] * 8.0f;
+  t0 += src[ix*height + (iy + 1) ] * 8.0f; 
+  t0 -= src[ix*height + (iy + 2) ];
   t0 /= 12.0f;
 
-  t1 = texTarget.read(y_inputCoords1, texDesc)[0];
-  t1 -= texTarget.read(y_inputCoords2, texDesc)[0] * 8.0f;
-  t1 += texTarget.read(y_inputCoords3, texDesc)[0] * 8.0f;
-  t1 -= texTarget.read(y_inputCoords4, texDesc)[0];
+  t1  = target[ix*height + (iy - 2) ];
+  t1 -= target[ix*height + (iy - 1) ] * 8.0f;
+  t1 += target[ix*height + (iy + 1) ] * 8.0f; 
+  t1 -= target[ix*height + (iy + 2) ];
   t1 /= 12.0f;
 
   Iy[pos] = (t0 + t1) * 0.5f;
@@ -129,52 +111,27 @@ static void ComputeDerivatives(const float *I0, const float *I1, float *I0_h, fl
   q.memcpy(I1_h, I1, dataSize);
   q.wait();
 
-  for (int i = 0; i < h; i++) {
-    for (int j = 0; j < w; j++) {
-      int index = i * s + j;
-      src_d0[index * 4 + 0] = I0_h[index];
-      src_d0[index * 4 + 1] = src_d0[index * 4 + 2] = src_d0[index * 4 + 3] = 0.f;
-    }
-  }
+  q.memcpy(src_d0, I0_h, h*w*sizeof(float));
+  q.memcpy(src_d1, I1_h, h*w*sizeof(float));
+  q.wait();
 
-  for (int i = 0; i < h; i++) {
-    for (int j = 0; j < w; j++) {
-      int index = i * s + j;
-      src_d1[index * 4 + 0] = I1_h[index];
-      src_d1[index * 4 + 1] = src_d1[index * 4 + 2] = src_d1[index * 4 + 3] = 0.f;
-    }
-  }
+  // for (int i = 0; i < h; i++) {
+  //   for (int j = 0; j < w; j++) {
+  //     int index = i * s + j;
+  //     src_d0[index] = I0_h[index];
+  //   }
+  // }
 
-  auto texDescr = sycl::sampler(
-      sycl::coordinate_normalization_mode::unnormalized,
-      sycl::addressing_mode::clamp_to_edge, sycl::filtering_mode::nearest);
-
-  auto texSource =
-      sycl::image<2>(src_d0, sycl::image_channel_order::rgba,
-                         sycl::image_channel_type::fp32, sycl::range<2>(w, h),
-                         sycl::range<1>(s * sizeof(sycl::float4)));
-
-  auto texTarget =
-      sycl::image<2>(src_d1, sycl::image_channel_order::rgba,
-                         sycl::image_channel_type::fp32, sycl::range<2>(w, h),
-                         sycl::range<1>(s * sizeof(sycl::float4)));
+  // for (int i = 0; i < h; i++) {
+  //   for (int j = 0; j < w; j++) {
+  //     int index = i * s + j;
+  //     src_d1[index] = I1_h[index];
+  //   }
+  // }
   
-  
-  q.submit([&](sycl::handler &cgh) {
-    auto texSource_acc =
-         texSource.template get_access<sycl::float4,
-                                       sycl::access::mode::read>(cgh);
-     auto texTarget_acc =
-         texTarget.template get_access<sycl::float4,
-                                       sycl::access::mode::read>(cgh);
-
-    cgh.parallel_for(
-        sycl::nd_range<3>(blocks * threads, threads),
-        [=](sycl::nd_item<3> item_ct1) {
-          ComputeDerivativesKernel(
-              w, h, s, Ix, Iy, Iz,
-             texSource_acc, texTarget_acc,
-              texDescr, item_ct1);
-        });
+  q.parallel_for(sycl::nd_range<3>(blocks * threads, threads),[=](sycl::nd_item<3> item_ct1) {
+    ComputeDerivativesKernel(
+        w, h, s, Ix, Iy, Iz,
+        src_d0, src_d1, item_ct1);
   });
 }

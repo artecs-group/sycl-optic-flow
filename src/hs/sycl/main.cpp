@@ -125,7 +125,7 @@ int App::run() {
     std::cout << "Initializing..." << std::endl;
 
     initSYCL();
-    sycl::queue q{aspect_selector(sycl::aspect::image), sycl::property::queue::in_order()};
+    sycl::queue q{sycl::property::queue::in_order()};
     const std::string devName = q.get_device().get_info<sycl::info::device::name>();
     std::cout << "Running on: " << devName << std::endl;
 

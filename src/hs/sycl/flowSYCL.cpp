@@ -36,7 +36,7 @@
 #include "kernels/solverKernel.hpp"
 #include "kernels/addKernel.hpp"
 
-const float **pI0, **pI1;
+float **pI0, **pI1;
 int *pW, *pS, *pH;
 
 // device memory pointers
@@ -60,8 +60,8 @@ float *pI0_h, *I0_h, *pI1_h, *I1_h, *src_d0, *src_d1;
 
 void initFlow(sycl::queue q, int nLevels, int stride, int width, int height) {
     // pI0 and pI1 will hold device pointers
-    pI0 = new const float *[nLevels];
-    pI1 = new const float *[nLevels];
+    pI0 = new float *[nLevels];
+    pI1 = new float *[nLevels];
 
     pW = new int[nLevels];
     pH = new int[nLevels];
@@ -83,13 +83,13 @@ void initFlow(sycl::queue q, int nLevels, int stride, int width, int height) {
     d_nu = (float *)sycl::malloc_device(dataSize, q);
     d_nv = (float *)sycl::malloc_device(dataSize, q);
 
-    *(pI0 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
-    *(pI1 + currentLevel) = (const float *)sycl::malloc_device(dataSize, q);
+    *(pI0 + currentLevel) = (float *)sycl::malloc_device(dataSize, q);
+    *(pI1 + currentLevel) = (float *)sycl::malloc_device(dataSize, q);
 
     I0_h = (float *)sycl::malloc_host(dataSize, q);
     I1_h = (float *)sycl::malloc_host(dataSize, q);
-    src_d0 = (float *)sycl::malloc_shared(stride * height * sizeof(sycl::float4), q);
-    src_d1 = (float *)sycl::malloc_shared(stride * height * sizeof(sycl::float4), q);
+    src_d0 = (float *)sycl::malloc_device(stride * height * sizeof(float), q);
+    src_d1 = (float *)sycl::malloc_device(stride * height * sizeof(float), q);
 }
 
 
@@ -130,17 +130,19 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
         int nh = pH[currentLevel] / 2;
         int ns = iAlignUp(nw);
 
-        *(pI0 + currentLevel - 1) = (const float *)sycl::malloc_device(ns * nh * sizeof(float), q);
-        *(pI1 + currentLevel - 1) = (const float *)sycl::malloc_device(ns * nh * sizeof(float), q);
+        *(pI0 + currentLevel - 1) = (float *)sycl::malloc_device(ns * nh * sizeof(float), q);
+        *(pI1 + currentLevel - 1) = (float *)sycl::malloc_device(ns * nh * sizeof(float), q);
 
 
         Downscale(pI0[currentLevel], I0_h, src_d0, pW[currentLevel],
                 pH[currentLevel], pS[currentLevel], nw, nh, ns,
                 (float *)pI0[currentLevel - 1], q);
+        q.wait();
 
         Downscale(pI1[currentLevel], I0_h, src_d0, pW[currentLevel],
                 pH[currentLevel], pS[currentLevel], nw, nh, ns,
                 (float *)pI1[currentLevel - 1], q);
+        q.wait();
 
         pW[currentLevel - 1] = nw;
         pH[currentLevel - 1] = nh;
@@ -158,28 +160,33 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
           q.memset(d_dv0, 0, dataSize);
           q.memset(d_du1, 0, dataSize);
           q.memset(d_dv1, 0, dataSize);
+          q.wait();
 
       // on current level we compute optical flow
       // between frame 0 and warped frame 1
        WarpImage(pI1[currentLevel], I0_h, src_d0, pW[currentLevel], pH[currentLevel],
                 pS[currentLevel], d_u, d_v, d_tmp, q);
+        q.wait();
 
 
       ComputeDerivatives(pI0[currentLevel], d_tmp, I0_h, I1_h,
                          src_d0, src_d1, pW[currentLevel],
                          pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz, q);
+      q.wait();
 
       for (int iter = 0; iter < nSolverIters; ++iter) {
         SolveForUpdate(d_du0, d_dv0, d_Ix, d_Iy, d_Iz, pW[currentLevel],
                        pH[currentLevel], pS[currentLevel], alpha, d_du1, d_dv1, q);
-
+        q.wait();
         Swap(d_du0, d_du1);
         Swap(d_dv0, d_dv1);
       }
 
       // update u, v
       Add(d_u, d_du0, pH[currentLevel] * pS[currentLevel], d_u, q);
+      q.wait();
       Add(d_v, d_dv0, pH[currentLevel] * pS[currentLevel], d_v, q);
+      q.wait();
     }
 
     if (currentLevel != nLevels - 1) {
@@ -189,12 +196,14 @@ void ComputeFlow(sycl::queue q, const float *I0, const float *I1, int width, int
       Upscale(d_u, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
               pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
               scaleX, d_nu, q);
+      q.wait();
 
       float scaleY = (float)pH[currentLevel + 1] / (float)pH[currentLevel];
 
       Upscale(d_v, I0_h, src_d0, pW[currentLevel], pH[currentLevel], pS[currentLevel],
               pW[currentLevel + 1], pH[currentLevel + 1], pS[currentLevel + 1],
               scaleY, d_nv, q);
+      q.wait();
 
       Swap(d_u, d_nu);
       Swap(d_v, d_nv);

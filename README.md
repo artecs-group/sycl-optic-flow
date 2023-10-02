@@ -35,5 +35,9 @@ In the case you would run on NVIDIA GPUs you also need:
 * [CUDA 12.0](https://developer.nvidia.com/cuda-12-0-0-download-archive)
 * To run SYCL over NVIDIA GPU you must install [the standalone compiler](https://github.com/intel/llvm/blob/sycl/sycl/doc/GetStartedGuide.md) and the [oneMKL library](https://github.com/oneapi-src/oneMKL).
 
+### 1.2 AdaptiveCpp dependencies
+Compiling SYCL code with AdaptiveCpp (hipSYCL) is posible. Install it first:
+* [AdaptiveCpp](https://github.com/AdaptiveCpp/AdaptiveCpp)
+
 ## Acknowledgement
 This work has been supported by the EU (FEDER), the Spanish MINECO and CM under grants S2018/TCS-4423, PID2021-126576NB-I00 funded by MCIN/AEI/10.13039/501100011033 and by "ERDF A way of making Europe".

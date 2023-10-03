@@ -26,7 +26,7 @@
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
 __global__ void WarpingKernel(int width, int height, int stride,
-                              const float *u, const float *v, float *out, cudaTextureObject_t texToWarp)
+                              const float *u, const float *v, float *out, const float* src)
 {
     const int ix = threadIdx.x + blockIdx.x * blockDim.x;
     const int iy = threadIdx.y + blockIdx.y * blockDim.y;
@@ -37,8 +37,9 @@ __global__ void WarpingKernel(int width, int height, int stride,
 
     float x = ((float)ix + u[pos] + 0.5f) / (float)width;
     float y = ((float)iy + v[pos] + 0.5f) / (float)height;
+    const int index = x + y * stride;
 
-    out[pos] = tex2D<float>(texToWarp, x, y);
+    out[pos] = src[index];
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -64,27 +65,5 @@ void WarpImage(const float *src, int w, int h, int s,
     dim3 threads(32, 6);
     dim3 blocks(iDivUp(w, threads.x), iDivUp(h, threads.y));
 
-    cudaTextureObject_t texToWarp;
-    cudaResourceDesc            texRes;
-    memset(&texRes,0,sizeof(cudaResourceDesc));
-
-    texRes.resType            = cudaResourceTypePitch2D;
-    texRes.res.pitch2D.devPtr = (void*)src;
-    texRes.res.pitch2D.desc = cudaCreateChannelDesc<float>();
-    texRes.res.pitch2D.width = w;
-    texRes.res.pitch2D.height = h;
-    texRes.res.pitch2D.pitchInBytes = s * sizeof(float);
-
-    cudaTextureDesc             texDescr;
-    memset(&texDescr,0,sizeof(cudaTextureDesc));
-
-    texDescr.normalizedCoords = true;
-    texDescr.filterMode       = cudaFilterModeLinear;
-    texDescr.addressMode[0]   = cudaAddressModeMirror;
-    texDescr.addressMode[1]   = cudaAddressModeMirror;
-    texDescr.readMode = cudaReadModeElementType;
-
-    checkCudaErrors(cudaCreateTextureObject(&texToWarp, &texRes, &texDescr, NULL));
-
-    WarpingKernel<<<blocks, threads>>>(w, h, s, u, v, out, texToWarp);
+    WarpingKernel<<<blocks, threads>>>(w, h, s, u, v, out, src);
 }

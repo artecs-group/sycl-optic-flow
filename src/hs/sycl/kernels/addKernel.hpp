@@ -1,28 +1,16 @@
-/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+/*
+ * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * NVIDIA Corporation and its licensors retain all intellectual property and
+ * proprietary rights in and to this software and related documentation.
+ * Any use, reproduction, disclosure, or distribution of this software
+ * and related documentation without an express license agreement from
+ * NVIDIA Corporation is strictly prohibited.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Please refer to the applicable NVIDIA end user license agreement (EULA)
+ * associated with this source code for terms and conditions that govern
+ * your use of this NVIDIA software.
+ *
  */
 
 #include <sycl/sycl.hpp>
@@ -37,14 +25,16 @@
 /// \param[in]  count vector size
 /// \param[out] sum   result
 ///////////////////////////////////////////////////////////////////////////////
-void AddKernel(const float *op1, const float *op2, int count,
-                          float *sum, const sycl::nd_item<3> &item_ct1) {
-  const int pos = item_ct1.get_local_id(2) +
-                  item_ct1.get_group(2) * item_ct1.get_local_range(2);
 
-  if (pos >= count) return;
+void AddKernel(const float *op1, const float *op2, int count, float *sum,
+               const sycl::nd_item<3> &item_ct1)
+{
+    const int pos = item_ct1.get_local_id(2) +
+                    item_ct1.get_group(2) * item_ct1.get_local_range(2);
 
-  sum[pos] = op1[pos] + op2[pos];
+    if (pos >= count) return;
+
+    sum[pos] = op1[pos] + op2[pos];
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -54,13 +44,20 @@ void AddKernel(const float *op1, const float *op2, int count,
 /// \param[in]  count vector size
 /// \param[out] sum   result
 ///////////////////////////////////////////////////////////////////////////////
-static void Add(const float *op1, const float *op2, int count, float *sum, sycl::queue q) {
-  sycl::range<3> threads(1, 1, 256);
-  sycl::range<3> blocks(1, 1, iDivUp(count, threads[2]));
+static
+void Add(sycl::queue q, const float *op1, const float *op2, int count, float *sum)
+{
+    sycl::range<3> threads(1, 1, 256);
+    sycl::range<3> blocks(1, 1, iDivUp(count, threads[2]));
 
-  q.parallel_for(
-      sycl::nd_range<3>(blocks * threads, threads),
-      [=](sycl::nd_item<3> item_ct1) {
-        AddKernel(op1, op2, count, sum, item_ct1);
-      });
+    /*
+    DPCT1049:6: The work-group size passed to the SYCL kernel may exceed the
+    limit. To get the device limit, query info::device::max_work_group_size.
+    Adjust the work-group size if needed.
+    */
+    q.parallel_for(
+        sycl::nd_range<3>(blocks * threads, threads),
+        [=](sycl::nd_item<3> item_ct1) {
+            AddKernel(op1, op2, count, sum, item_ct1);
+        });
 }

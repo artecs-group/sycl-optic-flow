@@ -9,7 +9,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "common.hpp"
-#include "flowSYCL.hpp"
+#include "flow.hpp"
 
 using namespace cv;
 

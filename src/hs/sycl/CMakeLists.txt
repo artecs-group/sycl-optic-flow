@@ -6,7 +6,7 @@ set(CXX_STANDARD_REQUIRED 17)
 set(This hs)
 
 set(Headers
-    flowSYCL.hpp
+    flow.hpp
     common.hpp
     kernels/addKernel.hpp
     kernels/derivativesKernel.hpp
@@ -18,7 +18,7 @@ set(Headers
 
 set(Source
     main.cpp
-    flowSYCL.cpp
+    flow.cpp
 )
 
 set(EXTRA_FLAGS "")

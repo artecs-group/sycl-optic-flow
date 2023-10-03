@@ -1,28 +1,16 @@
-/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+/*
+ * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * NVIDIA Corporation and its licensors retain all intellectual property and
+ * proprietary rights in and to this software and related documentation.
+ * Any use, reproduction, disclosure, or distribution of this software
+ * and related documentation without an express license agreement from
+ * NVIDIA Corporation is strictly prohibited.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * Please refer to the applicable NVIDIA end user license agreement (EULA)
+ * associated with this source code for terms and conditions that govern
+ * your use of this NVIDIA software.
+ *
  */
 
 #include <sycl/sycl.hpp>
@@ -37,23 +25,22 @@
 /// \param[in]  stride  image stride
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
-void DownscaleKernel(int width, int height, int stride, float *out,
- float* src, const sycl::nd_item<3> &item_ct1) 
+void DownscaleKernel(int width, int height, int stride, float *out, const float* src,
+                     const sycl::nd_item<3> &item_ct1)
 {
-  const int ix = item_ct1.get_local_id(2) +
-                 item_ct1.get_group(2) * item_ct1.get_local_range(2);
-  const int iy = item_ct1.get_local_id(1) +
-                 item_ct1.get_group(1) * item_ct1.get_local_range(1);
+    const int ix = item_ct1.get_local_id(2) +
+                   item_ct1.get_group(2) * item_ct1.get_local_range(2);
+    const int iy = item_ct1.get_local_id(1) +
+                   item_ct1.get_group(1) * item_ct1.get_local_range(1);
 
-  if (ix >= width || iy >= height) return;
+    if (ix >= width-1 || iy >= height-1)
+        return;
 
-  const size_t srcx = ix * 2;
-  const size_t srcy = iy * 2;
+    const size_t srcx = ix * 2;
+    const size_t srcy = iy * 2;
 
-  out[ix + iy * stride] = 0.25f * (src[srcx*height + srcy] +
-                                   src[srcx*height + (srcy+1)] +
-                                   src[(srcx+1)*height + srcy] +
-                                   src[(srcx+1)*height + (srcy+1)]);
+    out[ix + iy * stride] = 0.25f * (src[srcx + srcy*stride] + src[srcx + (srcy+1)*stride] +
+                                    src[(srcx+1) + srcy*stride] + src[(srcx+1) + (srcy+1)*stride]);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -65,26 +52,22 @@ void DownscaleKernel(int width, int height, int stride, float *out,
 /// \param[in]  stride  image stride
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
-static void Downscale(const float *src, float *I0_h, float *src_p, int width, int height, int stride,
-int newWidth, int newHeight, int newStride, float *out, sycl::queue q) 
+static
+void Downscale(sycl::queue q, const float *src, int width, int height, int stride,
+               int newWidth, int newHeight, int newStride, float *out)
 {
-  sycl::range<3> threads(1, 8, 32);
-  sycl::range<3> blocks(1, iDivUp(newHeight, threads[1]),
-                        iDivUp(newWidth, threads[2]));
+    sycl::range<3> threads(1, 8, 32);
+    sycl::range<3> blocks(1, iDivUp(newHeight, threads[1]),
+                          iDivUp(newWidth, threads[2]));
 
-  int dataSize = height * stride * sizeof(float);
-
-  q.memcpy(I0_h, src, dataSize).wait();
-  q.memcpy(src_p, I0_h, height * width * sizeof(float)).wait();
-
-  // for (int i = 0; i < height; i++) {
-  //   for (int j = 0; j < width; j++) {
-  //     int index = i * stride + j;
-  //     src_p[index] = I0_h[index];
-  //   }
-  // }
-  
-  q.parallel_for(sycl::nd_range<3>(blocks * threads, threads), [=](sycl::nd_item<3> item_ct1) {
-    DownscaleKernel(newWidth, newHeight, newStride, out, src_p, item_ct1);
-  });
+    /*
+    DPCT1049:0: The work-group size passed to the SYCL kernel may exceed the
+    limit. To get the device limit, query info::device::max_work_group_size.
+    Adjust the work-group size if needed.
+    */
+    q.parallel_for(
+        sycl::nd_range<3>(blocks * threads, threads),
+        [=](sycl::nd_item<3> item_ct1) {
+            DownscaleKernel(newWidth, newHeight, newStride, out, src, item_ct1);
+        });
 }

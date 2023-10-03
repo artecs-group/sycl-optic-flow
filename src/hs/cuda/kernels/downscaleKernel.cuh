@@ -24,24 +24,19 @@
 /// \param[in]  stride  image stride
 /// \param[out] out     result
 ///////////////////////////////////////////////////////////////////////////////
-__global__ void DownscaleKernel(int width, int height, int stride, float *out, cudaTextureObject_t texFine)
+__global__ void DownscaleKernel(int width, int height, int stride, float *out, const float* src)
 {
     const int ix = threadIdx.x + blockIdx.x * blockDim.x;
     const int iy = threadIdx.y + blockIdx.y * blockDim.y;
 
-    if (ix >= width || iy >= height)
-    {
+    if (ix >= width-1 || iy >= height-1)
         return;
-    }
 
-    float dx = 1.0f/(float)width;
-    float dy = 1.0f/(float)height;
+    const size_t srcx = ix * 2;
+    const size_t srcy = iy * 2;
 
-    float x = ((float)ix + 0.5f) * dx;
-    float y = ((float)iy + 0.5f) * dy;
-
-    out[ix + iy * stride] = 0.25f * (tex2D<float>(texFine, x - dx * 0.25f, y) + tex2D<float>(texFine, x + dx * 0.25f, y) +
-                                     tex2D<float>(texFine, x, y - dy * 0.25f) + tex2D<float>(texFine, x, y + dy * 0.25f));
+    out[ix + iy * stride] = 0.25f * (src[srcx + srcy*stride] + src[srcx + (srcy+1)*stride] +
+                                    src[(srcx+1) + srcy*stride] + src[(srcx+1) + (srcy+1)*stride]);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -60,27 +55,5 @@ void Downscale(const float *src, int width, int height, int stride,
     dim3 threads(32, 8);
     dim3 blocks(iDivUp(newWidth, threads.x), iDivUp(newHeight, threads.y));
 
-    cudaTextureObject_t texFine;
-    cudaResourceDesc            texRes;
-    memset(&texRes,0,sizeof(cudaResourceDesc));
-
-    texRes.resType            = cudaResourceTypePitch2D;
-    texRes.res.pitch2D.devPtr = (void*)src;
-    texRes.res.pitch2D.desc = cudaCreateChannelDesc<float>();
-    texRes.res.pitch2D.width = width;
-    texRes.res.pitch2D.height = height;
-    texRes.res.pitch2D.pitchInBytes = stride * sizeof(float);
-
-    cudaTextureDesc             texDescr;
-    memset(&texDescr,0,sizeof(cudaTextureDesc));
-
-    texDescr.normalizedCoords = true;
-    texDescr.filterMode       = cudaFilterModeLinear;
-    texDescr.addressMode[0]   = cudaAddressModeMirror;
-    texDescr.addressMode[1]   = cudaAddressModeMirror;
-    texDescr.readMode = cudaReadModeElementType;
-
-    checkCudaErrors(cudaCreateTextureObject(&texFine, &texRes, &texDescr, NULL));
-
-    DownscaleKernel<<<blocks, threads>>>(newWidth, newHeight, newStride, out, texFine);
+    DownscaleKernel<<<blocks, threads>>>(newWidth, newHeight, newStride, out, src);
 }

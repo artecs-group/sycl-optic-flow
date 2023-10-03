@@ -23,7 +23,11 @@
 #include "kernels/solverKernel.cuh"
 #include "kernels/addKernel.cuh"
 
+int *pW, *pH, *pS;
+
 // device memory pointers
+float *pI0, *pI1;
+
 float *d_tmp;
 float *d_du0;
 float *d_dv0;
@@ -43,6 +47,14 @@ void initFlow(int nLevels, int stride, int width, int height)
 {
     const int dataSize = stride * height * sizeof(float);
 
+    pW = new int [nLevels];
+    pH = new int [nLevels];
+    pS = new int [nLevels];
+
+    // allocate GPU memory for input images
+    checkCudaErrors(cudaMalloc(&pI0, nLevels*dataSize));
+    checkCudaErrors(cudaMalloc(&pI1, nLevels*dataSize));
+
     checkCudaErrors(cudaMalloc(&d_tmp, dataSize));
     checkCudaErrors(cudaMalloc(&d_du0, dataSize));
     checkCudaErrors(cudaMalloc(&d_dv0, dataSize));
@@ -61,6 +73,12 @@ void initFlow(int nLevels, int stride, int width, int height)
 
 void deleteFlow_mem(int nLevels)
 {
+    delete [] pW;
+    delete [] pH;
+    delete [] pS;
+
+    checkCudaErrors(cudaFree(pI0));
+    checkCudaErrors(cudaFree(pI1));
     checkCudaErrors(cudaFree(d_tmp));
     checkCudaErrors(cudaFree(d_du0));
     checkCudaErrors(cudaFree(d_dv0));
@@ -101,25 +119,13 @@ void ComputeFlow(const float *I0,
                      float *u,
                      float *v)
 {
-    int *pW = new int [nLevels];
-    int *pH = new int [nLevels];
-    int *pS = new int [nLevels];
-
-    // pI0 and pI1 will hold device pointers
-    const float **pI0 = new const float *[nLevels];
-    const float **pI1 = new const float *[nLevels];
-
     const int dataSize = stride * height * sizeof(float);
-
+    const size_t size = stride * height;
     // prepare pyramid
     int currentLevel = nLevels - 1;
 
-    // allocate GPU memory for input images
-    checkCudaErrors(cudaMalloc(pI0 + currentLevel, dataSize));
-    checkCudaErrors(cudaMalloc(pI1 + currentLevel, dataSize));
-
-    checkCudaErrors(cudaMemcpy((void *)pI0[currentLevel], I0, dataSize, cudaMemcpyHostToDevice));
-    checkCudaErrors(cudaMemcpy((void *)pI1[currentLevel], I1, dataSize, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(pI0 + currentLevel*size, I0, dataSize, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(pI1 + currentLevel*size, I1, dataSize, cudaMemcpyHostToDevice));
 
     pW[currentLevel] = width;
     pH[currentLevel] = height;
@@ -131,14 +137,11 @@ void ComputeFlow(const float *I0,
         int nh = pH[currentLevel] / 2;
         int ns = iAlignUp(nw);
 
-        checkCudaErrors(cudaMalloc(pI0 + currentLevel - 1, ns * nh * sizeof(float)));
-        checkCudaErrors(cudaMalloc(pI1 + currentLevel - 1, ns * nh * sizeof(float)));
+        Downscale(pI0 + currentLevel*size, pW[currentLevel], pH[currentLevel],
+                  pS[currentLevel], nw, nh, ns, pI0 + (currentLevel - 1)*size);
 
-        Downscale(pI0[currentLevel], pW[currentLevel], pH[currentLevel],
-                  pS[currentLevel], nw, nh, ns, (float *)pI0[currentLevel - 1]);
-
-        Downscale(pI1[currentLevel], pW[currentLevel], pH[currentLevel],
-                  pS[currentLevel], nw, nh, ns, (float *)pI1[currentLevel - 1]);
+        Downscale(pI1 + currentLevel*size, pW[currentLevel], pH[currentLevel],
+                  pS[currentLevel], nw, nh, ns, pI1 + (currentLevel - 1)*size);
 
         pW[currentLevel - 1] = nw;
         pH[currentLevel - 1] = nh;
@@ -162,10 +165,10 @@ void ComputeFlow(const float *I0,
 
             // on current level we compute optical flow
             // between frame 0 and warped frame 1
-            WarpImage(pI1[currentLevel], pW[currentLevel], pH[currentLevel],
+            WarpImage(pI1 + currentLevel*size, pW[currentLevel], pH[currentLevel],
                       pS[currentLevel], d_u, d_v, d_tmp);
 
-            ComputeDerivatives(pI0[currentLevel], d_tmp, pW[currentLevel],
+            ComputeDerivatives(pI0 + currentLevel*size, d_tmp, pW[currentLevel],
                                pH[currentLevel], pS[currentLevel], d_Ix, d_Iy, d_Iz);
 
             for (int iter = 0; iter < nSolverIters; ++iter)
@@ -202,19 +205,4 @@ void ComputeFlow(const float *I0,
 
     checkCudaErrors(cudaMemcpy(u, d_u, dataSize, cudaMemcpyDeviceToHost));
     checkCudaErrors(cudaMemcpy(v, d_v, dataSize, cudaMemcpyDeviceToHost));
-
-
-    // cleanup
-    for (int i = 0; i < nLevels; ++i)
-    {
-        checkCudaErrors(cudaFree((void *)pI0[i]));
-        checkCudaErrors(cudaFree((void *)pI1[i]));
-    }
-
-    delete [] pI0;
-    delete [] pI1;
-
-    delete [] pW;
-    delete [] pH;
-    delete [] pS;
 }

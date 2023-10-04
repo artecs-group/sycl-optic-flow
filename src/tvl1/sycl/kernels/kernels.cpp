@@ -7,13 +7,13 @@ using namespace cl;
 
 void bodyDivergence(const float *v1, const float *v2, float *div,
     int nx, int ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class bodyDivergence>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class bodyDivergence>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             if(i < (nx-1)*(ny-1)) {
@@ -25,13 +25,13 @@ void bodyDivergence(const float *v1, const float *v2, float *div,
 
 void edgeRowsDivergence(const float *v1, const float *v2,
     float *div, int nx, int ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class edgeRowsDivergence>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                            sycl::range<3>(1, 1, threads),
-                            sycl::range<3>(1, 1, threads)),
-                            [=](sycl::nd_item<3> item)
+        h.parallel_for<class edgeRowsDivergence>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                            cl::sycl::range<3>(1, 1, threads),
+                            cl::sycl::range<3>(1, 1, threads)),
+                            [=](cl::sycl::nd_item<3> item)
         {
             const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p = (ny-1) * nx + j;
@@ -46,13 +46,13 @@ void edgeRowsDivergence(const float *v1, const float *v2,
 
 void edgeColumnsDivergence(const float *v1, const float *v2,
     float *div, int nx, int ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class edgeColumnsDivergence>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class edgeColumnsDivergence>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p1 = i * nx;
@@ -67,10 +67,10 @@ void edgeColumnsDivergence(const float *v1, const float *v2,
 }
 
 void cornersDivergence(const float *v1, const float *v2,
-    float *div, int nx, int ny, sycl::queue queue) 
+    float *div, int nx, int ny, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class cornersDivergence>(1, [=](sycl::item<1> i)
+        h.parallel_for<class cornersDivergence>(1, [=](cl::sycl::item<1> i)
         {
             div[0]         =  v1[0] + v2[0];
             div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
@@ -82,13 +82,13 @@ void cornersDivergence(const float *v1, const float *v2,
 
 void bodyForwardGradient(const float *f, float *fx, float *fy,
     size_t nx, size_t ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class bodyForwardGradient>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class bodyForwardGradient>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
             if(i < (nx-1)*(ny-1)) {
@@ -101,13 +101,13 @@ void bodyForwardGradient(const float *f, float *fx, float *fy,
 
 void rowsForwardGradient(const float *f, float *fx, float *fy,
     size_t nx, size_t ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class rowsForwardGradient>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class rowsForwardGradient>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int j = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
             const int p = (ny-1) * nx + j;
@@ -122,13 +122,13 @@ void rowsForwardGradient(const float *f, float *fx, float *fy,
 
 void columnsForwardGradient(const float *f, float *fx, float *fy,
     size_t nx, size_t ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class columnsForwardGradient>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class columnsForwardGradient>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p = i * nx-1;
@@ -143,13 +143,13 @@ void columnsForwardGradient(const float *f, float *fx, float *fy,
 
 void bodyGradient(const float *input, float *dx, float *dy,
     int nx, int ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class bodyGradient>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class bodyGradient>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             if(i < (nx-1)*(ny-1)){
@@ -162,13 +162,13 @@ void bodyGradient(const float *input, float *dx, float *dy,
 
 void edgeRowsGradient(const float *input, float *dx, float *dy,
     int nx, int ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class edgeRowsGradient>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class edgeRowsGradient>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int k = (ny - 1) * nx + j;
@@ -184,13 +184,13 @@ void edgeRowsGradient(const float *input, float *dx, float *dy,
 
 void edgeColumnsGradient(const float *input, float *dx, float *dy,
     int nx, int ny,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class edgeColumnsGradient>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class edgeColumnsGradient>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p = i * nx;
@@ -206,10 +206,10 @@ void edgeColumnsGradient(const float *input, float *dx, float *dy,
 }
 
 void cornersGradient(const float *input, float *dx, float *dy,
-    int nx, int ny, sycl::queue queue) 
+    int nx, int ny, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class cornersGradient>(1, [=](sycl::item<1> i)
+        h.parallel_for<class cornersGradient>(1, [=](cl::sycl::item<1> i)
         {
             dx[0] = 0.5f*(input[1] - input[0]);
             dy[0] = 0.5f*(input[nx] - input[0]);
@@ -227,31 +227,31 @@ void cornersGradient(const float *input, float *dx, float *dy,
 }
 
 void convolution1D(float *B, int size, float sPi, float den,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class convolution1D>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class convolution1D>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size)
-                B[i] = 1.0f / sPi * sycl::exp(-i * i / den);
+                B[i] = 1.0f / sPi * cl::sycl::exp(-i * i / den);
         });
     });
 }
 
 void lineConvolution(float *I, const float *B, const int *xDim,
     const int *yDim, int size, float *buffer,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class lineConvolution>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class lineConvolution>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             int k = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
             const int xdim{xDim[0]}, ydim{yDim[0]};
@@ -280,13 +280,13 @@ void lineConvolution(float *I, const float *B, const int *xDim,
 
 void columnConvolution(float *I, const float *B, const int *xDim,
     const int *yDim, int size, float *buffer,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class columnConvolution>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class columnConvolution>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             int k = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
             const int xdim{xDim[0]}, ydim{yDim[0]};
@@ -316,13 +316,13 @@ void columnConvolution(float *I, const float *B, const int *xDim,
 void bicubicResample(const float *Is, float *Iout, const int *nxx,
     const int *nyy, const int *nx, const int *ny,
     float factor,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class bicubicResample>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class bicubicResample>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int idx = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -340,13 +340,13 @@ void bicubicResample(const float *Is, float *Iout, const int *nxx,
 void bicubicResample2(const float *Is, float *Iout,
     const int *nxx, const int *nyy,
     const int *nx, const int *ny,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class bicubicResample2>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class bicubicResample2>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int idx = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -370,11 +370,11 @@ void zoomSize(const int *nx, // width of the orignal image
     int *nxx,      // width of the zoomed image
     int *nyy,      // height of the zoomed image
     float factor,   // zoom factor between 0 and 1
-    sycl::queue queue
+    cl::sycl::queue queue
 )
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class zoomSize>(1, [=](sycl::item<1> i)
+        h.parallel_for<class zoomSize>(1, [=](cl::sycl::item<1> i)
         {
             //compute the new size corresponding to factor
             //we add 0.5 for rounding off to the closest number
@@ -390,8 +390,8 @@ void zoomSize(const int *nx, // width of the orignal image
 **/
 inline int neumann_bc(int x, int nx, bool* out) {
 	*out = (x < 0) || (x >= nx);
-        x = sycl::max(x, 0);
-        return sycl::min(x, nx - 1);
+        x = cl::sycl::max(x, 0);
+        return cl::sycl::min(x, nx - 1);
 }
 
 
@@ -484,14 +484,14 @@ void bicubicInterpolationWarp(
     bool border_out,    // if true, put zeros outside the region
     int blocks,
     int threads,
-    sycl::queue queue
+    cl::sycl::queue queue
 )
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class bicubicInterpolationWarp>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class bicubicInterpolationWarp>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int p = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -509,14 +509,14 @@ void calculateRhoGrad(const float *I1wx, const float *I1wy,
     const float *I1w, const float *u1,
     const float *u2, const float *I0,
     float *grad, float *rho_c, int size,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
 
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class calculateRhoGrad>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class calculateRhoGrad>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -535,13 +535,13 @@ void estimateThreshold(const float *rho_c, const float *I1wx,
     const float *u2, const float *grad,
     float lT, size_t size, float *v1,
     float *v2,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class estimateThreshold>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class estimateThreshold>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -577,13 +577,13 @@ void estimateOpticalFlow(float *u1, float *u2, const float *v1,
     const float *v2, const float *div_p1,
     const float *div_p2, float theta,
     size_t size, float *error,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class estimateOpticalFlow>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class estimateOpticalFlow>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -603,19 +603,19 @@ void estimateOpticalFlow(float *u1, float *u2, const float *v1,
 void estimateGArgs(const float *div_p1, const float *div_p2,
     const float *v1, const float *v2, size_t size,
     float taut, float *g1, float *g2,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class estimateGArgs>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class estimateGArgs>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size){
-                g1[i] = 1.0f + taut * sycl::hypot((float)(div_p1[i]), (float)(v1[i]));
-                g2[i] = 1.0f + taut * sycl::hypot((float)(div_p2[i]), (float)(v2[i]));
+                g1[i] = 1.0f + taut * cl::sycl::hypot((float)(div_p1[i]), (float)(v1[i]));
+                g2[i] = 1.0f + taut * cl::sycl::hypot((float)(div_p2[i]), (float)(v2[i]));
             }
         });
     });
@@ -623,13 +623,13 @@ void estimateGArgs(const float *div_p1, const float *div_p2,
 
 void divideByG(const float *g1, const float *g2, size_t size,
     float *p11, float *p12, float *p21, float *p22,
-    int blocks, int threads, sycl::queue queue)
+    int blocks, int threads, cl::sycl::queue queue)
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class divideByG>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class divideByG>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
@@ -647,13 +647,13 @@ void normKernel(const float* I0,
     const float* I1,
     float* I0n, float* I1n,
     float min, float den, int size,
-    int blocks, int threads, sycl::queue queue) 
+    int blocks, int threads, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class normKernel>( sycl::nd_range<3>(sycl::range<3>(1, 1, blocks) *
-                        sycl::range<3>(1, 1, threads),
-                        sycl::range<3>(1, 1, threads)),
-                        [=](sycl::nd_item<3> item)
+        h.parallel_for<class normKernel>( cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, blocks) *
+                        cl::sycl::range<3>(1, 1, threads),
+                        cl::sycl::range<3>(1, 1, threads)),
+                        [=](cl::sycl::nd_item<3> item)
         {
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 

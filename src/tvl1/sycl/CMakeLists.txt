@@ -32,7 +32,7 @@ set(LXXFLAGS "")
 
 if(ACPP)
     find_package(OpenSYCL REQUIRED)
-    add_compile_definitions(ACPP="ON")
+    add_compile_definitions(ACPP=True)
     include_directories($ENV{ONEMKL}/include)
 else()
     list(APPEND LXXFLAGS "-fsycl-device-code-split=per_kernel")

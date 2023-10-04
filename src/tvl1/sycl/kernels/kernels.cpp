@@ -15,10 +15,16 @@ void bodyDivergence(const float *v1, const float *v2, float *div,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             if(i < (nx-1)*(ny-1)) {
                 div[i]  = (v1[i] - v1[i-1]) + (v2[i] - v2[i-nx]);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -33,6 +39,9 @@ void edgeRowsDivergence(const float *v1, const float *v2,
                             cl::sycl::range<3>(1, 1, threads)),
                             [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p = (ny-1) * nx + j;
 
@@ -40,6 +49,9 @@ void edgeRowsDivergence(const float *v1, const float *v2,
                 div[j] = v1[j] - v1[j-1] + v2[j];
                 div[p] = v1[p] - v1[p-1] - v2[p-nx];
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -54,6 +66,9 @@ void edgeColumnsDivergence(const float *v1, const float *v2,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p1 = i * nx;
             const int p2 = (i+1) * nx - 1;
@@ -62,6 +77,9 @@ void edgeColumnsDivergence(const float *v1, const float *v2,
                 div[p1] =  v1[p1]   + v2[p1] - v2[p1 - nx];
                 div[p2] = -v1[p2-1] + v2[p2] - v2[p2 - nx];
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -74,10 +92,16 @@ void cornersDivergence(const float *v1, const float *v2,
                         cl::sycl::range<1>(1),
                         cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             div[0]         =  v1[0] + v2[0];
             div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
             div[(ny-1)*nx] =  v1[(ny-1)*nx] - v2[(ny-2)*nx];
             div[ny*nx-1]   = -v1[ny*nx - 2] - v2[(ny-1)*nx - 1];
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -92,11 +116,17 @@ void bodyForwardGradient(const float *f, float *fx, float *fy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
             if(i < (nx-1)*(ny-1)) {
                 fx[i] = f[i+1] - f[i];
                 fy[i] = f[i+nx] - f[i];
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -111,6 +141,9 @@ void rowsForwardGradient(const float *f, float *fx, float *fy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int j = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
             const int p = (ny-1) * nx + j;
 
@@ -118,6 +151,9 @@ void rowsForwardGradient(const float *f, float *fx, float *fy,
                 fx[p] = f[p+1] - f[p];
                 fy[p] = 0.0f;
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -132,6 +168,9 @@ void columnsForwardGradient(const float *f, float *fx, float *fy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p = i * nx-1;
 
@@ -139,6 +178,9 @@ void columnsForwardGradient(const float *f, float *fx, float *fy,
                 fx[p] = 0.0f;
                 fy[p] = f[p+nx] - f[p];
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -153,11 +195,17 @@ void bodyGradient(const float *input, float *dx, float *dy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             if(i < (nx-1)*(ny-1)){
                 dx[i] = 0.5f*(input[i+1] - input[i-1]);
                 dy[i] = 0.5f*(input[i+nx] - input[i-nx]);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -172,6 +220,9 @@ void edgeRowsGradient(const float *input, float *dx, float *dy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int j = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int k = (ny - 1) * nx + j;
             if(j < nx-1) {
@@ -180,6 +231,9 @@ void edgeRowsGradient(const float *input, float *dx, float *dy,
                 dx[k] = 0.5f*(input[k+1] - input[k-1]);
                 dy[k] = 0.5f*(input[k] - input[k-nx]);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -194,6 +248,9 @@ void edgeColumnsGradient(const float *input, float *dx, float *dy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = (item.get_group(2) * item.get_local_range(2) + item.get_local_id(2)) + 1;
             const int p = i * nx;
             const int k = (i+1) * nx - 1;
@@ -203,6 +260,9 @@ void edgeColumnsGradient(const float *input, float *dx, float *dy,
                 dx[k] = 0.5f*(input[k] - input[k-1]);
                 dy[k] = 0.5f*(input[k+nx] - input[k-nx]);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -215,6 +275,9 @@ void cornersGradient(const float *input, float *dx, float *dy,
                         cl::sycl::range<1>(1),
                         cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             dx[0] = 0.5f*(input[1] - input[0]);
             dy[0] = 0.5f*(input[nx] - input[0]);
 
@@ -226,6 +289,9 @@ void cornersGradient(const float *input, float *dx, float *dy,
 
             dx[ny*nx-1] = 0.5f*(input[ny*nx-1] - input[ny*nx-1-1]);
             dy[ny*nx-1] = 0.5f*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -239,10 +305,16 @@ void convolution1D(float *B, int size, float sPi, float den,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size)
                 B[i] = 1.0f / sPi * cl::sycl::exp(-i * i / den);
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -257,6 +329,9 @@ void lineConvolution(float *I, const float *B, const int *xDim,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             int k = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
             const int xdim{xDim[0]}, ydim{yDim[0]};
             const int bdx = xdim + size;
@@ -278,6 +353,9 @@ void lineConvolution(float *I, const float *B, const int *xDim,
                     I[k * xdim + i - size] = sum;
                 }
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -292,6 +370,9 @@ void columnConvolution(float *I, const float *B, const int *xDim,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             int k = item.get_group(1) * item.get_local_range(1) + item.get_local_id(1);
             const int xdim{xDim[0]}, ydim{yDim[0]};
             const int bdy = ydim + size;
@@ -313,6 +394,9 @@ void columnConvolution(float *I, const float *B, const int *xDim,
                     I[(i - size) * xdim + k] = sum;
                 }
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -328,6 +412,9 @@ void bicubicResample(const float *Is, float *Iout, const int *nxx,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int idx = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if (idx < *nyy * *nxx) {
@@ -337,6 +424,9 @@ void bicubicResample(const float *Is, float *Iout, const int *nxx,
                 const float jj = (float)j / factor;
                 Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -352,6 +442,9 @@ void bicubicResample2(const float *Is, float *Iout,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int idx = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if (idx < *nyy * *nxx) {
@@ -361,6 +454,9 @@ void bicubicResample2(const float *Is, float *Iout,
                 const float jj = (float)j / ((float)*nxx / *nx);
                 Iout[idx] = bicubicInterpolationAt(Is, jj, ii, *nx, *ny, false);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -382,10 +478,16 @@ void zoomSize(const int *nx, // width of the orignal image
                         cl::sycl::range<1>(1),
                         cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             //compute the new size corresponding to factor
             //we add 0.5 for rounding off to the closest number
             *nxx = (int)(*nx * factor + 0.5f);
             *nyy = (int)(*ny * factor + 0.5f);
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -499,6 +601,9 @@ void bicubicInterpolationWarp(
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int p = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             // obtain the bicubic interpolation at position (uu, vv)
@@ -506,7 +611,10 @@ void bicubicInterpolationWarp(
                 const float uu = (static_cast<int>(p%nx)) + u[p];
                 const float vv = (static_cast<int>(p/nx)) + v[p];
                 output[p] = bicubicInterpolationAt(input, uu, vv, nx, ny, border_out);
-            } 
+            }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -524,6 +632,9 @@ void calculateRhoGrad(const float *I1wx, const float *I1wy,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size) {
@@ -532,6 +643,9 @@ void calculateRhoGrad(const float *I1wx, const float *I1wy,
                 // compute the constant part of the rho function
                 rho_c[i] = (I1w[i] - I1wx[i] * u1[i] - I1wy[i] * u2[i] - I0[i]);
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -549,6 +663,9 @@ void estimateThreshold(const float *rho_c, const float *I1wx,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size) {
@@ -575,6 +692,9 @@ void estimateThreshold(const float *rho_c, const float *I1wx,
                 v1[i] = u1[i] + d1;
                 v2[i] = u2[i] + d2;
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -591,6 +711,9 @@ void estimateOpticalFlow(float *u1, float *u2, const float *v1,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size) {		
@@ -601,7 +724,10 @@ void estimateOpticalFlow(float *u1, float *u2, const float *v1,
                 u2[i] = v2[i] + theta * div_p2[i];
 
                 error[i] = (u1[i] - u1k) * (u1[i] - u1k) + (u2[i] - u2k) * (u2[i] - u2k);
-            } 
+            }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -617,12 +743,18 @@ void estimateGArgs(const float *div_p1, const float *div_p2,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size){
                 g1[i] = 1.0f + taut * cl::sycl::hypot((float)(div_p1[i]), (float)(v1[i]));
                 g2[i] = 1.0f + taut * cl::sycl::hypot((float)(div_p2[i]), (float)(v2[i]));
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -637,6 +769,9 @@ void divideByG(const float *g1, const float *g2, size_t size,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size){		
@@ -645,6 +780,9 @@ void divideByG(const float *g1, const float *g2, size_t size,
                 p21[i] = p21[i] / g2[i];
                 p22[i] = p22[i] / g2[i];
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }
@@ -661,12 +799,18 @@ void normKernel(const float* I0,
                         cl::sycl::range<3>(1, 1, threads)),
                         [=](cl::sycl::nd_item<3> item)
         {
+#if defined(ACPP) && defined(NGPU)
+            __hipsycl_if_target_cuda(
+#endif
             const int i = item.get_group(2) * item.get_local_range(2) + item.get_local_id(2);
 
             if(i < size) {
                 I0n[i] = 255.0f * (I0[i] - min) / den;
                 I1n[i] = 255.0f * (I1[i] - min) / den;
             }
+#if defined(ACPP) && defined(NGPU)
+            );
+#endif
         });
     });
 }

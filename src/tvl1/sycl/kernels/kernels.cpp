@@ -273,7 +273,7 @@ void cornersGradient(const float *input, float *dx, float *dy,
     queue.submit([&](cl::sycl::handler& h) {
         h.parallel_for<class cornersGradient>(cl::sycl::nd_range<3>(cl::sycl::range<3>(1,1,1) *
                         cl::sycl::range<3>(1,1,1),
-                        cl::sycl::range<3>(1,1,1)), [=](cl::sycl::nd_item<1> i)
+                        cl::sycl::range<3>(1,1,1)), [=](cl::sycl::nd_item<3> i)
         {
 #if defined(ACPP) && defined(NGPU)
             __hipsycl_if_target_cuda(

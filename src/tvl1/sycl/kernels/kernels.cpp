@@ -70,7 +70,9 @@ void cornersDivergence(const float *v1, const float *v2,
     float *div, int nx, int ny, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class cornersDivergence>(1, [=](cl::sycl::item<1> i)
+        h.parallel_for<class cornersDivergence>(cl::sycl::nd_range<1>(cl::sycl::range<1>(1) *
+                        cl::sycl::range<1>(1),
+                        cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
         {
             div[0]         =  v1[0] + v2[0];
             div[nx-1]      = -v1[nx - 2] + v2[nx - 1];
@@ -209,7 +211,9 @@ void cornersGradient(const float *input, float *dx, float *dy,
     int nx, int ny, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class cornersGradient>(1, [=](cl::sycl::item<1> i)
+        h.parallel_for<class cornersGradient>(cl::sycl::nd_range<1>(cl::sycl::range<1>(1) *
+                        cl::sycl::range<1>(1),
+                        cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
         {
             dx[0] = 0.5f*(input[1] - input[0]);
             dy[0] = 0.5f*(input[nx] - input[0]);
@@ -374,7 +378,9 @@ void zoomSize(const int *nx, // width of the orignal image
 )
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class zoomSize>(1, [=](cl::sycl::item<1> i)
+        h.parallel_for<class zoomSize>(cl::sycl::nd_range<1>(cl::sycl::range<1>(1) *
+                        cl::sycl::range<1>(1),
+                        cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
         {
             //compute the new size corresponding to factor
             //we add 0.5 for rounding off to the closest number

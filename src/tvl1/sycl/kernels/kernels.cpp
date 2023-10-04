@@ -88,9 +88,9 @@ void cornersDivergence(const float *v1, const float *v2,
     float *div, int nx, int ny, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class cornersDivergence>(cl::sycl::nd_range<1>(cl::sycl::range<1>(1) *
-                        cl::sycl::range<1>(1),
-                        cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
+        h.parallel_for<class cornersDivergence>(cl::sycl::nd_range<3>(cl::sycl::range<3>(1, 1, 1) *
+                        cl::sycl::range<3>(1, 1, 1),
+                        cl::sycl::range<3>(1, 1, 1)), [=](cl::sycl::nd_item<3> i)
         {
 #if defined(ACPP) && defined(NGPU)
             __hipsycl_if_target_cuda(
@@ -271,9 +271,9 @@ void cornersGradient(const float *input, float *dx, float *dy,
     int nx, int ny, cl::sycl::queue queue) 
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class cornersGradient>(cl::sycl::nd_range<1>(cl::sycl::range<1>(1) *
-                        cl::sycl::range<1>(1),
-                        cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
+        h.parallel_for<class cornersGradient>(cl::sycl::nd_range<3>(cl::sycl::range<3>(1,1,1) *
+                        cl::sycl::range<3>(1,1,1),
+                        cl::sycl::range<3>(1,1,1)), [=](cl::sycl::nd_item<1> i)
         {
 #if defined(ACPP) && defined(NGPU)
             __hipsycl_if_target_cuda(
@@ -474,9 +474,9 @@ void zoomSize(const int *nx, // width of the orignal image
 )
 {
     queue.submit([&](cl::sycl::handler& h) {
-        h.parallel_for<class zoomSize>(cl::sycl::nd_range<1>(cl::sycl::range<1>(1) *
-                        cl::sycl::range<1>(1),
-                        cl::sycl::range<1>(1)), [=](cl::sycl::item<1> i)
+        h.parallel_for<class zoomSize>(cl::sycl::nd_range<3>(cl::sycl::range<3>(1,1,1) *
+                        cl::sycl::range<3>(1,1,1),
+                        cl::sycl::range<3>(1,1,1)), [=](cl::sycl::nd_item<3> i)
         {
 #if defined(ACPP) && defined(NGPU)
             __hipsycl_if_target_cuda(

@@ -1,9 +1,13 @@
-#include <CL/sycl.hpp>
+#ifdef ACPP
+    #include <CL/sycl.hpp>
+    using namespace cl;
+#else
+    #include <sycl/sycl.hpp>
+#endif
 #include <iostream>
 #include <cmath>
 
 #include "kernels.hpp"
-using namespace cl;
 
 void bodyDivergence(const float *v1, const float *v2, float *div,
     int nx, int ny,

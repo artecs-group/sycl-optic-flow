@@ -30,8 +30,16 @@ cmake -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DNGPU=ON ..
 cmake --build .
 ONEAPI_DEVICE_SELECTOR=cuda:gpu ./tvl1 --video=../../../../dataset/schoolgirls.mp4
 ```
-
 **Note**: Running on NVIDIA GPU remember to install and load the standalone compiler.
+
+In the other side, compiling for AdaptiveCpp (hipSYCL) you must:
+
+```bash
+export OPENSYCL_TARGETS=omp.accelerated;cuda:sm_61
+cmake -G Ninja -DACPP=ON -DOpenSYCL_DIR=$ACPP/lib/cmake/OpenSYCL/ -DCMAKE_CXX_COMPILER=syclcc -DNGPU=ON ..
+cmake --build .
+./tvl1 --video=../../../../dataset/schoolgirls.mp4 --show=false
+```
 
 ## Acknowledgement
 This work has been supported by the EU (FEDER), the Spanish MINECO and CM under grants S2018/TCS-4423, PID2021-126576NB-I00 funded by MCIN/AEI/10.13039/501100011033 and by "ERDF A way of making Europe".

@@ -1,5 +1,9 @@
-#include <CL/sycl.hpp>
-using namespace cl;
+#ifdef ACPP
+    #include <CL/sycl.hpp>
+    using namespace cl::sycl;
+#else
+    #include <sycl/sycl.hpp>
+#endif
 #include <string>
 #include <cmath>
 #include <iostream>
@@ -41,7 +45,7 @@ private:
     int                         m_camera_id;
     cv::VideoCapture            m_cap;
     cv::Mat                     m_frame;
-    cl::sycl::queue                 m_syclQueue;
+    sycl::queue                 m_syclQueue;
 };
 
 
@@ -58,7 +62,7 @@ App::App(const CommandLineParser& cmd)
 
 void App::initSYCL() {
     // Configuration details: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
-    m_syclQueue = cl::sycl::queue(cl::sycl::default_selector_v);
+    m_syclQueue = sycl::queue(sycl::default_selector_v);
 }
 
 
@@ -127,7 +131,7 @@ int App::run() {
     std::cout << "Initializing..." << std::endl;
 
     initSYCL();
-    const std::string devName = m_syclQueue.get_device().get_info<cl::sycl::info::device::name>();
+    const std::string devName = m_syclQueue.get_device().get_info<sycl::info::device::name>();
     std::cout << "Running on: " << devName << std::endl;
 
     initVideoSource();

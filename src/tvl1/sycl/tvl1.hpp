@@ -1,12 +1,8 @@
 #ifndef DUAL_TVL1_OPTIC_FLOW_H
 #define DUAL_TVL1_OPTIC_FLOW_H
 
-#ifdef ACPP
-    #include <CL/sycl.hpp>
-    using namespace cl::sycl;
-#else
-    #include <sycl/sycl.hpp>
-#endif
+#include <CL/sycl.hpp>
+using namespace cl;
 #include <cstdint>
 
 constexpr size_t MAX_ITERATIONS{2};
@@ -16,7 +12,7 @@ constexpr size_t DEFAULT_GAUSSIAN_WINDOW_SIZE{5};
 
 class TV_L1 { 
 public:
-    TV_L1(sycl::queue queue, int width, int height, float tau=0.25f, float lambda=0.15f, 
+    TV_L1(cl::sycl::queue queue, int width, int height, float tau=0.25f, float lambda=0.15f, 
         float theta=0.3f, int nscales=100, float zfactor=0.5f, int warps=5,
         float epsilon=0.01f);
     ~TV_L1();
@@ -36,7 +32,7 @@ private:
     void gaussian(float *I, float *B, const int *xdim, const int *ydim,
                   float sigma, float *buffer);
 
-    sycl::queue _queue;
+    cl::sycl::queue _queue;
 
     float* _hostU;
 

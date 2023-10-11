@@ -20,7 +20,7 @@ set(EXTRA_FLAGS "")
 
 if(DEBUG)
     message(STATUS "Added -g to compilation.")
-    set(EXTRA_FLAGS "-g" "-qopt-report=3")
+    set(EXTRA_FLAGS "-g")
 endif()
 
 set(THREADS_PER_BLOCK_DEFAULT 128 CACHE STRING "Default number of threads per block")

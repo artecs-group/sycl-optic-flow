@@ -1,12 +1,7 @@
 #ifndef _LUCASKANADE_H_
 #define _LUCASKANADE_H_
 
-#ifdef ACPP
-    #include <CL/sycl.hpp>
-    using namespace cl;
-#else
-    #include <sycl/sycl.hpp>
-#endif
+#include <sycl/sycl.hpp>
 #include "kernels/kernels.hpp"
 
 class LucasKanade {

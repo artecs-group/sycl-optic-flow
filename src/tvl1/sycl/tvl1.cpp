@@ -21,7 +21,7 @@
  *      Applications", Journal of Mathematical Imaging and Vision, 20: 89-97, 2004
  **/
 
-TV_L1::TV_L1(sycl::queue queue, int width, int height, float tau, float lambda, float theta, int nscales,
+TV_L1::TV_L1(cl::sycl::queue queue, int width, int height, float tau, float lambda, float theta, int nscales,
 	float zfactor, int warps, float epsilon)
 {
     _queue = queue;
@@ -45,40 +45,40 @@ TV_L1::TV_L1(sycl::queue queue, int width, int height, float tau, float lambda, 
 	_hNy   = new int[_nscales];
 
     // allocate memory for the pyramid structure
-    _I0s = sycl::malloc_device<float>(_nscales * _width * _height, _queue);
-    _I1s = sycl::malloc_device<float>(_nscales * _width * _height, _queue);
-    _u1s = sycl::malloc_device<float>(_nscales * _width * _height, _queue);
-    _u2s = sycl::malloc_device<float>(_nscales * _width * _height, _queue);
-    _imBuffer = sycl::malloc_device<float>(_width * _height, _queue);
-    _nx = sycl::malloc_device<int>(_nscales, _queue);
-    _ny = sycl::malloc_device<int>(_nscales, _queue);
-    _nxy = sycl::malloc_device<int>(2, _queue);
+    _I0s = cl::sycl::malloc_device<float>(_nscales * _width * _height, _queue);
+    _I1s = cl::sycl::malloc_device<float>(_nscales * _width * _height, _queue);
+    _u1s = cl::sycl::malloc_device<float>(_nscales * _width * _height, _queue);
+    _u2s = cl::sycl::malloc_device<float>(_nscales * _width * _height, _queue);
+    _imBuffer = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _nx = cl::sycl::malloc_device<int>(_nscales, _queue);
+    _ny = cl::sycl::malloc_device<int>(_nscales, _queue);
+    _nxy = cl::sycl::malloc_device<int>(2, _queue);
 
-    _I1x = sycl::malloc_device<float>(_width * _height, _queue);
-    _I1y = sycl::malloc_device<float>(_width * _height, _queue);
-    _I1w = sycl::malloc_device<float>(_width * _height, _queue);
-    _I1wx = sycl::malloc_device<float>(_width * _height, _queue);
-    _I1wy = sycl::malloc_device<float>(_width * _height, _queue);
-    _rho_c = sycl::malloc_device<float>(_width * _height, _queue);
-    _v1 = sycl::malloc_device<float>(_width * _height, _queue);
-    _v2 = sycl::malloc_device<float>(_width * _height, _queue);
-    _p11 = sycl::malloc_device<float>(_width * _height, _queue);
-    _p12 = sycl::malloc_device<float>(_width * _height, _queue);
-    _p21 = sycl::malloc_device<float>(_width * _height, _queue);
-    _p22 = sycl::malloc_device<float>(_width * _height, _queue);
-    _grad = sycl::malloc_device<float>(_width * _height, _queue);
-    _div_p1 = sycl::malloc_device<float>(_width * _height, _queue);
-    _div_p2 = sycl::malloc_device<float>(_width * _height, _queue);
-    _g1 = sycl::malloc_device<float>(_width * _height, _queue);
-    _g2 = sycl::malloc_device<float>(_width * _height, _queue);
-    _error = sycl::malloc_device<float>(_width * _height, _queue);
-    _lError = sycl::malloc_shared<float>(1, _queue);
-    _maxMin = sycl::malloc_shared<int64_t>(4, _queue);
+    _I1x = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _I1y = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _I1w = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _I1wx = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _I1wy = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _rho_c = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _v1 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _v2 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _p11 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _p12 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _p21 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _p22 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _grad = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _div_p1 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _div_p2 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _g1 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _g2 = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _error = cl::sycl::malloc_device<float>(_width * _height, _queue);
+    _lError = cl::sycl::malloc_shared<float>(1, _queue);
+    _maxMin = cl::sycl::malloc_shared<int64_t>(4, _queue);
 
     float sigma = ZOOM_SIGMA_ZERO * std::sqrt(1.0f/(_zfactor*_zfactor) - 1.0f);
 	sigma = std::max(sigma, PRESMOOTHING_SIGMA);
 	const int bSize = (int) DEFAULT_GAUSSIAN_WINDOW_SIZE * sigma + 1;
-    _B = sycl::malloc_device<float>(bSize, _queue);
+    _B = cl::sycl::malloc_device<float>(bSize, _queue);
 }
 
 TV_L1::~TV_L1() {
@@ -86,36 +86,36 @@ TV_L1::~TV_L1() {
 	delete[] _hNx;
 	delete[] _hNy;
 
-    sycl::free(_I0s, _queue);
-    sycl::free(_I1s, _queue);
-    sycl::free(_u1s, _queue);
-    sycl::free(_u2s, _queue);
-    sycl::free(_nx, _queue);
-    sycl::free(_ny, _queue);
-    sycl::free(_nxy, _queue);
-    sycl::free(_imBuffer, _queue);
+    cl::sycl::free(_I0s, _queue);
+    cl::sycl::free(_I1s, _queue);
+    cl::sycl::free(_u1s, _queue);
+    cl::sycl::free(_u2s, _queue);
+    cl::sycl::free(_nx, _queue);
+    cl::sycl::free(_ny, _queue);
+    cl::sycl::free(_nxy, _queue);
+    cl::sycl::free(_imBuffer, _queue);
 
-    sycl::free(_I1x, _queue);
-    sycl::free(_I1y, _queue);
-    sycl::free(_I1w, _queue);
-    sycl::free(_I1wx, _queue);
-    sycl::free(_I1wy, _queue);
-    sycl::free(_rho_c, _queue);
-    sycl::free(_v1, _queue);
-    sycl::free(_v2, _queue);
-    sycl::free(_p11, _queue);
-    sycl::free(_p12, _queue);
-    sycl::free(_p21, _queue);
-    sycl::free(_p22, _queue);
-    sycl::free(_grad, _queue);
-    sycl::free(_div_p1, _queue);
-    sycl::free(_div_p2, _queue);
-    sycl::free(_g1, _queue);
-    sycl::free(_g2, _queue);
-    sycl::free(_B, _queue);
-    sycl::free(_error, _queue);
-    sycl::free(_lError, _queue);
-    sycl::free(_maxMin, _queue);
+    cl::sycl::free(_I1x, _queue);
+    cl::sycl::free(_I1y, _queue);
+    cl::sycl::free(_I1w, _queue);
+    cl::sycl::free(_I1wx, _queue);
+    cl::sycl::free(_I1wy, _queue);
+    cl::sycl::free(_rho_c, _queue);
+    cl::sycl::free(_v1, _queue);
+    cl::sycl::free(_v2, _queue);
+    cl::sycl::free(_p11, _queue);
+    cl::sycl::free(_p12, _queue);
+    cl::sycl::free(_p21, _queue);
+    cl::sycl::free(_p22, _queue);
+    cl::sycl::free(_grad, _queue);
+    cl::sycl::free(_div_p1, _queue);
+    cl::sycl::free(_div_p2, _queue);
+    cl::sycl::free(_g1, _queue);
+    cl::sycl::free(_g2, _queue);
+    cl::sycl::free(_B, _queue);
+    cl::sycl::free(_error, _queue);
+    cl::sycl::free(_lError, _queue);
+    cl::sycl::free(_maxMin, _queue);
 }
 
 

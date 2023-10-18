@@ -1,9 +1,4 @@
-#ifdef ACPP
-    #include <CL/sycl.hpp>
-    using namespace cl;
-#else
-    #include <sycl/sycl.hpp>
-#endif
+#include <sycl/sycl.hpp>
 #include <string>
 #include <cmath>
 #include <iostream>

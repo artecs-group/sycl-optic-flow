@@ -77,8 +77,8 @@ __global__ void columnsForwardGradient(const float* f, float* fx, float* fy, siz
 __global__ void bodyGradient(const float* input, float* dx, float* dy, int nx, int ny){
 	const int i = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
 	if(i < (nx-1)*(ny-1)){
-		dx[i] = 0.5*(input[i+1] - input[i-1]);
-		dy[i] = 0.5*(input[i+nx] - input[i-nx]);
+		dx[i] = 0.5f*(input[i+1] - input[i-1]);
+		dy[i] = 0.5f*(input[i+nx] - input[i-nx]);
 	}
 }
 
@@ -87,10 +87,10 @@ __global__ void edgeRowsGradient(const float* input, float* dx, float* dy, int n
 	const int j = (blockIdx.x * blockDim.x + threadIdx.x) + 1;
 	const int k = (ny - 1) * nx + j;
 	if(j < nx-1) {
-		dx[j] = 0.5*(input[j+1] - input[j-1]);
-		dy[j] = 0.5*(input[j+nx] - input[j]);
-		dx[k] = 0.5*(input[k+1] - input[k-1]);
-		dy[k] = 0.5*(input[k] - input[k-nx]);
+		dx[j] = 0.5f*(input[j+1] - input[j-1]);
+		dy[j] = 0.5f*(input[j+nx] - input[j]);
+		dx[k] = 0.5f*(input[k+1] - input[k-1]);
+		dy[k] = 0.5f*(input[k] - input[k-nx]);
 	}
 }
 
@@ -100,26 +100,26 @@ __global__ void edgeColumnsGradient(const float* input, float* dx, float* dy, in
 	const int p = i * nx;
 	const int k = (i+1) * nx - 1;
 	if(i < ny-1) {
-		dx[p] = 0.5*(input[p+1] - input[p]);
-		dy[p] = 0.5*(input[p+nx] - input[p-nx]);
-		dx[k] = 0.5*(input[k] - input[k-1]);
-		dy[k] = 0.5*(input[k+nx] - input[k-nx]);
+		dx[p] = 0.5f*(input[p+1] - input[p]);
+		dy[p] = 0.5f*(input[p+nx] - input[p-nx]);
+		dx[k] = 0.5f*(input[k] - input[k-1]);
+		dy[k] = 0.5f*(input[k+nx] - input[k-nx]);
 	}
 }
 
 
 __global__ void cornersGradient(const float* input, float* dx, float* dy, int nx, int ny){
-	dx[0] = 0.5*(input[1] - input[0]);
-	dy[0] = 0.5*(input[nx] - input[0]);
+	dx[0] = 0.5f*(input[1] - input[0]);
+	dy[0] = 0.5f*(input[nx] - input[0]);
 
-	dx[nx-1] = 0.5*(input[nx-1] - input[nx-2]);
-	dy[nx-1] = 0.5*(input[2*nx-1] - input[nx-1]);
+	dx[nx-1] = 0.5f*(input[nx-1] - input[nx-2]);
+	dy[nx-1] = 0.5f*(input[2*nx-1] - input[nx-1]);
 
-	dx[(ny-1)*nx] = 0.5*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
-	dy[(ny-1)*nx] = 0.5*(input[(ny-1)*nx] - input[(ny-2)*nx]);
+	dx[(ny-1)*nx] = 0.5f*(input[(ny-1)*nx + 1] - input[(ny-1)*nx]);
+	dy[(ny-1)*nx] = 0.5f*(input[(ny-1)*nx] - input[(ny-2)*nx]);
 
-	dx[ny*nx-1] = 0.5*(input[ny*nx-1] - input[ny*nx-1-1]);
-	dy[ny*nx-1] = 0.5*(input[ny*nx-1] - input[(ny-1)*nx-1]);
+	dx[ny*nx-1] = 0.5f*(input[ny*nx-1] - input[ny*nx-1-1]);
+	dy[ny*nx-1] = 0.5f*(input[ny*nx-1] - input[(ny-1)*nx-1]);
 }
 
 
@@ -127,7 +127,7 @@ __global__ void convolution1D(float* B, int size, float sPi, float den) {
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	if(i < size)
-		B[i] = 1 / sPi * expf(-i * i / den);
+		B[i] = 1.0f / sPi * expf(-i * i / den);
 }
 
 
@@ -224,8 +224,8 @@ __global__ void zoomSize(
 {
 	//compute the new size corresponding to factor
 	//we add 0.5 for rounding off to the closest number
-	*nxx = (int)(*nx * factor + 0.5);
-	*nyy = (int)(*ny * factor + 0.5);
+	*nxx = (int)(*nx * factor + 0.5f);
+	*nyy = (int)(*ny * factor + 0.5f);
 }
 
 
@@ -247,9 +247,9 @@ __device__ inline float cubic_interpolation_cell (
 	float x      //point to be interpolated
 )
 {
-	return  v[1] + 0.5 * x * (v[2] - v[0] +
-		x * (2.0 *  v[0] - 5.0 * v[1] + 4.0 * v[2] - v[3] +
-		x * (3.0 * (v[1] - v[2]) + v[3] - v[0])));
+	return  v[1] + 0.5f * x * (v[2] - v[0] +
+		x * (2.0f *  v[0] - 5.0f * v[1] + 4.0f * v[2] - v[3] +
+		x * (3.0f * (v[1] - v[2]) + v[3] - v[0])));
 }
 
 
@@ -299,7 +299,7 @@ __device__ float bicubicInterpolationAt(
 	ddy = neumann_bc((int) vv + 2*sy, ny, &out);
 
 	if(out && border_out)
-		return 0.0;
+		return 0.0f;
 
 	//obtain the interpolation points of the image
 	float v[4];
@@ -432,7 +432,7 @@ __global__ void normKernel(const float* __restrict__ I0, const float* __restrict
 	const int i = blockIdx.x * blockDim.x + threadIdx.x;
 	
 	if(i < size) {
-		I0n[i] = 255.0 * (I0[i] - min) / den;
-		I1n[i] = 255.0 * (I1[i] - min) / den;
+		I0n[i] = 255.0f * (I0[i] - min) / den;
+		I1n[i] = 255.0f * (I1[i] - min) / den;
 	}
 }
